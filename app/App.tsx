@@ -497,7 +497,7 @@ export default function App() {
       )}
       {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
       {st.screen === 'platform' && (
-        <PlatformScreen plat={plat} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
+        <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
       {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} back={() => go('admin')} />}
       {st.screen === 'brand' && st.companyId && (
@@ -627,8 +627,13 @@ function TeamScreen({ companyId, back }: { companyId: string; back: () => void }
   );
 }
 
-function PlatformScreen({ plat, back, onSave }: { plat: Plat; back: () => void; onSave: (p: Plat) => Promise<string> }) {
+function PlatformScreen({ plat, me, back, onSave }: { plat: Plat; me?: string; back: () => void; onSave: (p: Plat) => Promise<string> }) {
   const [p, setP] = useState<Plat>(plat), [msg, setMsg] = useState('');
+  const [devs, setDevs] = useState<{ user_id: string; name: string }[]>([]), [link, setLink] = useState(''), [err, setErr] = useState(''), [copied, setCopied] = useState(false);
+  const loadDevs = async () => { const { data } = await supabase.from('profiles').select('user_id,email,display_name').eq('is_developer', true); setDevs((data || []).map((d: any) => ({ user_id: d.user_id, name: d.email || d.display_name || 'Developer' }))); };
+  useEffect(() => { loadDevs(); }, []);
+  const invite = async () => { setErr(''); const { data, error } = await supabase.rpc('create_developer_invite'); if (error) setErr(error.message); else { setLink(`${window.location.origin}/?invite=${data}`); setCopied(false); } };
+  const remove = async (id: string) => { setErr(''); const { error } = await supabase.rpc('set_developer', { p_user: id, p_flag: false }); if (error) setErr(error.message); else loadDevs(); };
   const f = (k: keyof Plat, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={p[k] || ''} onChange={(e) => { setP({ ...p, [k]: e.target.value }); setMsg(''); }} /></div>;
   return (
     <Page title="Platform brand" kicker="Developer" sub="The app's own name and look, shown on the login page and for companies that haven't set their own brand." back={back} backLabel="Home">
@@ -640,7 +645,15 @@ function PlatformScreen({ plat, back, onSave }: { plat: Plat; back: () => void; 
         <div className="field"><label className="lbl">Header color</label><input className="in colorin" type="color" value={p.dark || '#0b2a5c'} onChange={(e) => { setP({ ...p, dark: e.target.value }); setMsg(''); }} /></div>
       </div>
       <div className="muted">Each company can override all of this under Company &amp; brand. The home-screen icon and install name are fixed in the app's files.</div>
-      <div className="actions"><button className="btn" onClick={async () => setMsg((await onSave(p)) || 'Saved ✓')}>{msg || 'Save'}</button></div>
+      <h3>Platform team</h3>
+      <div className="muted">Developers can see and manage every company, create companies, invite owners and change the platform brand.</div>
+      <div className="group" style={{ margin: '0 -20px' }}>
+        {devs.map((d) => <div key={d.user_id} className="row static"><span className="grow">{d.name}{d.user_id === me ? ' (you)' : ''}</span>{d.user_id !== me && <button className="link" onClick={() => remove(d.user_id)}>Remove</button>}</div>)}
+      </div>
+      {link && <div className="okmsg" style={{ wordBreak: 'break-all' }}>{link}</div>}
+      {err && <div className="err">{err}</div>}
+      <button className="btn ghost" onClick={() => (link ? (navigator.clipboard?.writeText(link), setCopied(true)) : invite())}>{link ? (copied ? 'Copied ✓' : 'Copy developer invite link') : 'Invite another developer'}</button>
+      <div className="actions"><button className="btn" onClick={async () => setMsg((await onSave(p)) || 'Saved ✓')}>{msg || 'Save brand'}</button></div>
     </Page>
   );
 }
