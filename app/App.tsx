@@ -513,25 +513,35 @@ function TabBar({ screen, admin, go, onMe }: { screen: string; admin: boolean; g
 }
 
 function Login({ onLogin, onAuth }: { onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
-  const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [guest, setGuest] = useState(false);
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
+  const forgot = async () => {
+    if (!email.trim()) { setMsg('Enter your email above first.'); return; }
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+    setMsg(error ? error.message : 'Check your email for a reset link.');
+  };
   return (
     <main className="loginwrap">
-      <header className="dark loginhero">
-        <h1>We diagnose. We solve. We protect what matters.</h1>
-        <div className="sub">Sign in to your water evaluations</div>
+      <header className="loginhero">
+        <img src="/sws-logo-white.png" alt="Soft Water Specialists" className="herologo" width={260} height={68} />
+        <div>
+          <h1>We diagnose. We solve. We protect what matters.</h1>
+          <div className="sub">Sign in to your water evaluations</div>
+        </div>
       </header>
-      <div className="body">
-        <div className="field"><label className="lbl">Email</label><input className="in" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
-        <div className="field"><label className="lbl">Password</label><input className="in" type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></div>
-        {msg && <div className="err">{msg}</div>}
+      <div className="body loginbody">
+        <div className="field"><label className="lbl">Email</label><input className="in" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
+        <div className="field"><label className="lbl">Password</label><input className="in" type="password" placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && email && pw.length >= 6 && run('in')} /></div>
         <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>Sign in</button>
-        <button className="btn ghost" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create account</button>
-        <div className="kicker demo">Demo (not saved to the cloud)</div>
-        <div className="pills">
-          <button onClick={() => onLogin('Dana Ruiz', 'tech')}>Technician</button>
-          <button onClick={() => onLogin('Ortiz Plumbing & Heating', 'plumber')}>Partner</button>
-          <button onClick={() => onLogin('Matt Mahany', 'admin')}>Admin</button>
+        <div className="orline"><i />or sign in with<i /></div>
+        <button className="btn ghost sso" onClick={() => setMsg('Google sign-in is being set up. Use your email and password for now.')}><span className="gdot" />Google</button>
+        {msg && <div className={msg.startsWith('Check') ? 'okmsg' : 'err'}>{msg}</div>}
+        <button className="link left" onClick={forgot}>Forgot password?</button>
+        <button className="link left" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create an account</button>
+        <div className="guestbox">
+          <button className="btn ghost" onClick={() => setGuest(!guest)}>Look around as a guest</button>
+          {guest && <div className="pills"><button onClick={() => onLogin('Technician', 'tech')}>Technician</button><button onClick={() => onLogin('Ortiz Plumbing & Heating', 'plumber')}>Plumber</button><button onClick={() => onLogin('Admin', 'admin')}>Admin</button></div>}
+          <span className="muted">No sign-in needed. Sample data only, not saved to the cloud.</span>
         </div>
       </div>
     </main>
