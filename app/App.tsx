@@ -1,18 +1,24 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
-type JobData = { values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number }>; online: boolean };
+type Screen = 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
+type Brand = { tagline?: string; phone?: string; web?: string; logo?: string };
+type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand };
+type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 const GROUPS = ['Assess', 'Inspect', 'Plan', 'Close'];
 const GROUP_OF: Record<string, string> = { s1: 'Assess', sB: 'Assess', s2: 'Assess', s3: 'Assess', s4: 'Assess', s5: 'Assess', s6: 'Inspect', s7: 'Inspect', s8: 'Inspect', s9: 'Plan', s10: 'Plan', s14: 'Close', s16: 'Close' };
-const blank = (j: (typeof JOBS)[number], flow: 'full' | 'quick' = 'full'): JobData => ({
-  flow, parts: {}, other: [],
+const DEFAULT_KITS = JSON.parse(JSON.stringify(KITS)) as typeof KITS;
+const DEFAULT_RULES = RULES.map((r) => ({ ...r }));
+const DEFAULT_CAT = JSON.parse(JSON.stringify(CAT)) as typeof CAT;
+const blank = (j: Meta, flow: 'full' | 'quick' = 'full'): JobData => ({
+  meta: j, flow, parts: {}, other: [],
   values: { 's1.name': j.name, 's1.address': j.address, 's1.city': j.city, 's1.state': j.state, 's1.zip': j.zip, 's1.phone': j.phone, 's3.happiest': '' },
 });
 
@@ -20,8 +26,16 @@ export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
   const remoteSettings = useRef<Record<string, any>>({});
+  const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
+  const [loginBrand, setLoginBrand] = useState<(Brand & { name: string }) | null>(null);
   useEffect(() => {
     try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), online: navigator.onLine }); } catch {}
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const inv = q.get('invite'), co = q.get('co');
+      if (inv) { localStorage.setItem('sws-invite', inv); window.history.replaceState({}, '', window.location.pathname); }
+      if (co) supabase.rpc('public_brand', { p_slug: co }).then(({ data }) => { if (data) setLoginBrand({ name: data.name, ...(data.brand || {}) }); });
+    } catch {}
     setReady(true);
     const on = () => setSt((s) => ({ ...s, online: navigator.onLine }));
     window.addEventListener('online', on); window.addEventListener('offline', on);
@@ -30,26 +44,43 @@ export default function App() {
   useEffect(() => { if (ready) try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {} }, [st, ready]);
   useEffect(() => {
     if (!ready) return;
-    const handle = async (session: any) => {
+    const handle = async (session: any, home = false) => {
       if (!session) return;
-      const { data: p } = await supabase.from('profiles').select('company_id,role,display_name').maybeSingle();
-      const email = session.user.email as string;
-      if (!p) { setSt((x) => ({ ...x, screen: 'pending', user: email, uid: session.user.id, companyId: undefined })); return; }
-      const role = p.role === 'admin' || p.role === 'developer' ? 'admin' : p.role === 'plumber' || p.role === 'dealer' ? 'plumber' : 'tech';
-      const { data: rows } = await supabase.from('jobs').select('id,data');
-      const [{ data: cat }, { data: co }, { data: tk }] = await Promise.all([
-        supabase.from('catalog_items').select('sku,cost,msrp'),
-        supabase.from('companies').select('settings').maybeSingle(),
+      const email = session.user.email as string, uid = session.user.id as string;
+      let inviteErr = '';
+      let inv: string | null = null;
+      try { inv = localStorage.getItem('sws-invite'); localStorage.removeItem('sws-invite'); } catch {}
+      if (inv) { const { error } = await supabase.rpc('redeem_invite', { p_code: inv }); if (error) inviteErr = error.message; }
+      const { data: prof } = await supabase.from('profiles').select('display_name,is_developer,active_company_id').maybeSingle();
+      const { data: mem } = await supabase.from('memberships').select('company_id,role');
+      const { data: cos } = await supabase.from('companies').select('id,name,slug,settings').order('name');
+      const roleOf: Record<string, string> = Object.fromEntries((mem || []).map((m: any) => [m.company_id, m.role]));
+      const companies: Co[] = (cos || []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, role: roleOf[c.id] || 'admin', brand: c.settings?.brand || {} }));
+      let active: string | undefined = prof?.active_company_id || undefined;
+      if (!companies.find((c) => c.id === active)) { active = companies[0]?.id; if (active) await supabase.rpc('set_active_company', { p_company: active }); }
+      if (!active) { setSt((x) => ({ ...x, screen: 'pending', user: prof?.display_name || email, uid, companyId: undefined, companies: [], dev: !!prof?.is_developer, inviteErr })); return; }
+      const co = companies.find((c) => c.id === active)!;
+      const [{ data: rows }, { data: cat }, { data: cfgRow }, { data: tk }] = await Promise.all([
+        supabase.from('jobs').select('id,data'),
+        supabase.from('catalog_items').select('sku,name,cost,msrp'),
+        supabase.from('companies').select('settings').eq('id', active).maybeSingle(),
         supabase.from('tickets').select('id,topic,routed_to,body,urgent,author_id'),
       ]);
-      remoteSettings.current = co?.settings || {};
+      remoteSettings.current = cfgRow?.settings || {};
       const cfg = remoteSettings.current;
-      const prices = Object.fromEntries((cat || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp) }]));
-      const tickets = (tk || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === session.user.id ? email : 'Team member' }));
+      const prices = Object.fromEntries((cat || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp), name: c.name }]));
+      const tickets = (tk || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === uid ? email : 'Team member' }));
       const remote: Record<string, JobData> = Object.fromEntries((rows || []).map((r: any) => [r.id, r.data]));
-      setSt((x) => ({ ...x, ...cfg, prices, tickets, dev: p.role === 'developer', uid: session.user.id, companyId: p.company_id, role, user: p.display_name || email, jobs: { ...x.jobs, ...remote },
-        screen: x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen }));
+      const rr = prof?.is_developer ? 'admin' : co.role;
+      const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
+      setSt((x) => ({
+        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, brand: cfg.brand,
+        prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
+        jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
+        screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
+      }));
     };
+    loadRef.current = handle;
     supabase.auth.getSession().then(({ data }) => handle(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_IN') handle(session); });
     return () => sub.subscription.unsubscribe();
@@ -67,24 +98,30 @@ export default function App() {
     const t = setTimeout(() => {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
-      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy }).filter(([, v]) => v !== undefined)) };
+      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, brand: st.brand }).filter(([, v]) => v !== undefined)) };
       if (JSON.stringify(next) !== JSON.stringify(remoteSettings.current)) {
         remoteSettings.current = next;
         supabase.from('companies').update({ settings: next }).eq('id', st.companyId!).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.brand, st.uid, st.companyId, st.role]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false })); };
-  Object.entries(st.prices || {}).forEach(([k, p]) => CAT[k] && Object.assign(CAT[k], p));
-  if (st.kits) Object.assign(KITS, st.kits);
-  if (st.rules) RULES.splice(0, RULES.length, ...st.rules);
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, tickets: undefined, jobId: undefined })); };
+  const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
+  const coName = st.companyName || 'Soft Water Specialists';
+  Object.keys(CAT).forEach((k) => { if (!DEFAULT_CAT[k]) delete CAT[k]; else Object.assign(CAT[k], DEFAULT_CAT[k]); });
+  Object.entries(st.prices || {}).forEach(([k, p]) => { if (CAT[k]) Object.assign(CAT[k], { cost: p.cost, msrp: p.msrp }); else CAT[k] = { sku: k, name: p.name || k, cost: p.cost, msrp: p.msrp }; });
+  Object.keys(KITS).forEach((k) => delete KITS[k]); Object.assign(KITS, JSON.parse(JSON.stringify(st.kits || DEFAULT_KITS)));
+  RULES.splice(0, RULES.length, ...(st.rules || DEFAULT_RULES));
   const disc = st.disc ?? 40;
   const isPartner = st.role === 'plumber';
 
   const go = (screen: Screen, extra: Partial<State> = {}) => { setSt((s) => ({ ...s, screen, ...extra })); window.scrollTo(0, 0); };
-  const job = JOBS.find((j) => j.id === st.jobId);
+  const metaOf = (id: string): Meta | undefined => st.jobs[id]?.meta || JOBS.find((j) => j.id === id);
+  const ownJobs = Object.values(st.jobs).map((d) => d.meta).filter((m): m is Meta => !!m);
+  const jobList: Meta[] = st.uid ? ownJobs : [...JOBS, ...ownJobs.filter((m) => !JOBS.some((j) => j.id === m.id))];
+  const job = st.jobId ? metaOf(st.jobId) : undefined;
   const jd = job ? st.jobs[job.id] || blank(job) : undefined;
   const patch = (p: Partial<JobData>) => job && jd && setSt((s) => ({ ...s, jobs: { ...s.jobs, [job.id]: { ...jd, ...p } } }));
   const setVal = (k: string, val: any) => jd && patch({ values: { ...jd.values, [k]: val } });
@@ -93,7 +130,7 @@ export default function App() {
   return (
     <div className={'shell ' + (['jobs', 'admin', 'help', 'switch'].includes(st.screen) ? 'withtabs' : '')}>
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
-      {st.screen === 'login' && <Login onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
+      {st.screen === 'login' && <Login brand={loginBrand} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
         const now = new Date(), first = (st.user || 'there').split(' ')[0];
         const week = Array.from({ length: 7 }, (_, k) => { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7) + k); return d; });
@@ -105,17 +142,22 @@ export default function App() {
               <div className="hero">
                 <div className="greet">{hi}, {first}</div>
                 <h1 className="big">Today</h1>
-                <div className="sub">{now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} · {JOBS.length} evaluations</div>
+                <div className="sub">{now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} · {jobList.length} evaluations</div>
               </div>
               <div className="week">
                 {week.map((d) => <div key={d.getDate()} className={d.toDateString() === now.toDateString() ? 'on' : ''}><span>{d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</span><b>{d.getDate()}</b></div>)}
               </div>
             </header>
             <div className="body jobsbody">
-              {JOBS.map((j) => {
+              <button className="btn ghost" onClick={() => go('newjob')}>New job</button>
+              {!jobList.length && (
+                <div className="card"><b>No jobs yet.</b><div className="muted">Add your first job to start an evaluation.</div>
+                  {st.dev && <button className="btn ghost" onClick={() => setSt((x) => ({ ...x, jobs: { ...x.jobs, ...Object.fromEntries(JOBS.map((j) => [j.id, blank(j)])) } }))}>Add sample jobs</button>}</div>
+              )}
+              {jobList.map((j) => {
                 const d = st.jobs[j.id];
                 const done = d ? pct(d, SECS) : 0;
-                const [t, ap] = j.time.split(' ');
+                const [t, ap] = (j.time || '').split(' ');
                 return (
                   <button key={j.id} className="jobcard" onClick={() => go('overview', { jobId: j.id, jobs: { ...st.jobs, [j.id]: d || blank(j, isPartner ? 'quick' : 'full') } })}>
                     <div className="time"><b>{t}</b><span>{ap}</span></div>
@@ -191,7 +233,7 @@ export default function App() {
         const ts = tiers(jd.values), pick = jd.choice || 'Best';
         const none = !Object.keys(recommend(jd.values).out).length;
         return (
-          <Page title="Your water plan" kicker={`Prepared for ${job.name} by Soft Water Specialists`} back={() => go('overview')} backLabel="Technician view">
+          <Page title="Your water plan" kicker={`Prepared for ${job.name} by ${coName}`} back={() => go('overview')} backLabel="Technician view">
             {none && <div className="err">Enter water test results first so a recommendation can be built.</div>}
             {ts.map((t) => (
               <button key={t.name} className={'card tier ' + (pick === t.name ? 'best' : '')} onClick={() => patch({ choice: t.name })}>
@@ -302,23 +344,29 @@ export default function App() {
       {st.screen === 'admin' && (
         <main>
           <div className="lighthero adminhero">
-            <div className="kicker">Soft Water Specialists · Admin</div>
+            <div className="kicker">{coName} · {st.dev ? 'Developer' : 'Admin'}</div>
             <h1>Home</h1>
-            <div className="muted" style={{ marginTop: 14 }}>Your companies</div>
-            <div className="btnrow cos">
-              <div className="co on"><b>Soft Water Specialists</b><span>Independent</span></div>
-              <div className="co"><b>Z Plumberz of Tri-Cities</b><span>Franchise location · Z Plumberz</span></div>
-            </div>
+            {(st.companies || []).length > 1 && <div className="muted" style={{ marginTop: 14 }}>Your companies</div>}
+            {(st.companies || []).length > 1 && (
+              <div className="btnrow cos">
+                {(st.companies || []).slice(0, 6).map((c) => (
+                  <button key={c.id} className={'co ' + (c.id === st.companyId ? 'on' : '')} onClick={() => c.id !== st.companyId && switchCompany(c.id)}><b>{c.name}</b><span>{c.slug ? c.slug : 'Company'}</span></button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="body tiles">
             {([
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
               ['Support inbox', `${(st.tickets || []).length} open`, 'inbox', Headphones],
               ['Packing lists', `${Object.values(st.jobs).filter((j) => jobItems(j).length).length} jobs`, 'packing', Package],
-              ['Products & pricing', `${CATALOG.length} products`, 'catalog', Box],
+              ['Products & pricing', `${Object.keys(CAT).length} products`, 'catalog', Box],
               ['Kits & rules', `${RULES.length} rules`, 'kits', Wrench],
               ['Messages', 'Push · Text · Email', 'messages', MessageSquare],
+              ['Team', 'Members and invites', 'team', Users],
+              ['Company & brand', 'Name, logo, contact', 'brand', Palette],
               ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
+              ...(st.dev ? [['All companies', `${(st.companies || []).length} on the platform`, 'companies', Building2]] : []),
             ] as [string, string, Screen, any][]).map(([t, sub, to, Ic]) => (
               <button key={t} className="tile" onClick={() => go(to)}><span className="ico"><Ic size={22} /></span><b>{t}</b><span className="muted">{sub}</span></button>
             ))}
@@ -331,12 +379,13 @@ export default function App() {
       )}
       {st.screen === 'catalog' && (
         <Page title="Products and pricing" sub="Changes apply to proposals and partner orders" back={() => go('admin')}>
+          <AddProduct onAdd={(sku, name, cost, msrp) => setSt((x) => ({ ...x, prices: { ...x.prices, [sku]: { cost, msrp, name } } }))} />
           {Object.values(CAT).map((c) => (
             <div key={c.sku} className="card"><b>{c.name}</b><div className="muted">{c.sku}</div>
               <div className="pricegrid">
                 {(['cost', 'msrp'] as const).map((f) => (
                   <label key={f} className="lbl">{f === 'cost' ? 'Cost' : 'MSRP'}
-                    <input className="in" inputMode="decimal" value={c[f]} onChange={(e) => setSt((x) => ({ ...x, prices: { ...x.prices, [c.sku]: { cost: c.cost, msrp: c.msrp, [f]: parseFloat(e.target.value) || 0 } } }))} /></label>
+                    <input className="in" inputMode="decimal" value={c[f]} onChange={(e) => setSt((x) => ({ ...x, prices: { ...x.prices, [c.sku]: { name: c.name, cost: c.cost, msrp: c.msrp, [f]: parseFloat(e.target.value) || 0 } } }))} /></label>
                 ))}
               </div></div>
           ))}
@@ -369,7 +418,7 @@ export default function App() {
       {st.screen === 'packing' && (
         <Page title="Packing lists" sub="Jobs with materials" back={() => go('admin')}>
           {Object.entries(st.jobs).map(([id, d]) => ({ id, d, items: jobItems(d) })).filter((x) => x.items.length).map(({ id, d, items }) => {
-            const j = JOBS.find((x) => x.id === id)!, done = st.packed?.[id] || [];
+            const j = metaOf(id) || ({ name: id } as Meta), done = st.packed?.[id] || [];
             const tog = (k: string) => setSt((x) => ({ ...x, packed: { ...x.packed, [id]: done.includes(k) ? done.filter((q) => q !== k) : [...done, k] } }));
             return (
               <div key={id} className="card"><div className="between"><b>{j.name}</b><span className={'chip ' + (done.length === items.length ? 'ok' : '')}>{done.length}/{items.length}</span></div>
@@ -426,10 +475,19 @@ export default function App() {
           ))}
         </Page>
       )}
+      {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
+      {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} back={() => go('admin')} />}
+      {st.screen === 'brand' && st.companyId && (
+        <BrandScreen name={coName} brand={st.brand || {}} back={() => go('admin')}
+          onSave={async (name, b) => { await supabase.from('companies').update({ name }).eq('id', st.companyId!); setSt((x) => ({ ...x, companyName: name, brand: b, companies: (x.companies || []).map((c) => (c.id === x.companyId ? { ...c, name } : c)) })); }} />
+      )}
+      {st.screen === 'companies' && (
+        <CompaniesScreen list={st.companies || []} active={st.companyId} back={() => go('admin')} onEnter={switchCompany}
+          onCreate={async (name, slug) => { const { error } = await supabase.rpc('create_company', { p_name: name, p_slug: slug }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
+      )}
       {st.screen === 'pending' && (
-        <Page title="Almost there" sub={st.user} right={<button className="link" onClick={signOut}>Sign out</button>}>
-          <div className="card"><b>Your account is waiting for access.</b><div className="muted">An admin needs to add you to a company. Ask Matt, then sign in again.</div></div>
-        </Page>
+        <PendingScreen user={st.user || ''} err={(st as any).inviteErr} dev={!!st.dev} onSignOut={signOut}
+          onRedeem={async (code) => { const { error } = await supabase.rpc('redeem_invite', { p_code: code }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
       )}
       {['jobs', 'admin', 'help', 'switch'].includes(st.screen) && <TabBar screen={st.screen} admin={st.role === 'admin'} dev={st.dev} go={(x) => go(x)} onMe={signOut} />}
       <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
@@ -482,6 +540,116 @@ function secDone(v: Vals, id: string) {
   return Object.keys(v).some((k) => k.startsWith(id + '.') && v[k] && !(Array.isArray(v[k]) && !v[k].length) && !(id === 's1' && ['s1.name','s1.address','s1.city','s1.state','s1.zip','s1.phone'].includes(k)));
 }
 
+function AddProduct({ onAdd }: { onAdd: (sku: string, name: string, cost: number, msrp: number) => void }) {
+  const [sku, setSku] = useState(''), [name, setName] = useState(''), [cost, setCost] = useState(''), [msrp, setMsrp] = useState('');
+  const ok = sku.trim() && name.trim() && !isNaN(parseFloat(msrp));
+  return (
+    <div className="card"><b>Add a product</b>
+      <input className="in" placeholder="SKU (e.g. Z-4)" value={sku} onChange={(e) => setSku(e.target.value)} />
+      <input className="in" placeholder="Product name" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="pricegrid"><input className="in" inputMode="decimal" placeholder="Cost" value={cost} onChange={(e) => setCost(e.target.value)} /><input className="in" inputMode="decimal" placeholder="MSRP" value={msrp} onChange={(e) => setMsrp(e.target.value)} /></div>
+      <button className="btn ghost" disabled={!ok} onClick={() => { onAdd(sku.trim().toUpperCase(), name.trim(), parseFloat(cost) || 0, parseFloat(msrp)); setSku(''); setName(''); setCost(''); setMsrp(''); }}>Add product</button>
+    </div>
+  );
+}
+
+function NewJob({ back, onCreate }: { back: () => void; onCreate: (m: Meta) => void }) {
+  const [f, setF] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', reason: '' });
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  return (
+    <Page title="New job" kicker="Water system evaluation" back={back} backLabel="Jobs">
+      <div className="field"><label className="lbl">Customer name</label><input className="in" value={f.name} onChange={set('name')} /></div>
+      <div className="field"><label className="lbl">Address</label><input className="in" value={f.address} onChange={set('address')} /></div>
+      <div className="field"><label className="lbl">City</label><input className="in" value={f.city} onChange={set('city')} /></div>
+      <div className="pricegrid"><div className="field"><label className="lbl">State</label><input className="in" value={f.state} onChange={set('state')} /></div><div className="field"><label className="lbl">Zip</label><input className="in" inputMode="numeric" value={f.zip} onChange={set('zip')} /></div></div>
+      <div className="field"><label className="lbl">Phone</label><input className="in" inputMode="tel" value={f.phone} onChange={set('phone')} /></div>
+      <div className="field"><label className="lbl">Why are they calling?</label><input className="in" value={f.reason} onChange={set('reason')} /></div>
+      <div className="actions"><button className="btn" disabled={!f.name.trim()} onClick={() => onCreate({ ...f, id: 'J-' + Date.now().toString(36).toUpperCase(), time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) })}>Create job</button></div>
+    </Page>
+  );
+}
+
+const ROLE_LABEL: Record<string, string> = { admin: 'Admin', tech: 'Technician', plumber: 'Plumbing partner', dealer: 'Authorized dealer', diy: 'DIY homeowner', franchisor: 'Franchise HQ' };
+
+function TeamScreen({ companyId, back }: { companyId: string; back: () => void }) {
+  const [members, setMembers] = useState<{ user_id: string; role: string; name: string }[]>([]);
+  const [invites, setInvites] = useState<{ code: string; role: string }[]>([]);
+  const [role, setRole] = useState('tech'), [msg, setMsg] = useState(''), [copied, setCopied] = useState('');
+  const load = async () => {
+    const { data: m } = await supabase.from('memberships').select('user_id,role').eq('company_id', companyId);
+    const ids = (m || []).map((x: any) => x.user_id);
+    const { data: pr } = ids.length ? await supabase.from('profiles').select('user_id,display_name,email').in('user_id', ids) : { data: [] as any[] };
+    const nm: Record<string, string> = Object.fromEntries((pr || []).map((x: any) => [x.user_id, x.email || x.display_name || 'Member']));
+    setMembers((m || []).map((x: any) => ({ user_id: x.user_id, role: x.role, name: nm[x.user_id] || 'Member' })));
+    const { data: iv } = await supabase.from('invites').select('code,role').eq('company_id', companyId).is('used_at', null).gt('expires_at', new Date().toISOString());
+    setInvites(iv || []);
+  };
+  useEffect(() => { load(); }, [companyId]); // eslint-disable-line
+  const make = async () => { setMsg(''); const { error } = await supabase.rpc('create_invite', { p_company: companyId, p_role: role }); if (error) setMsg(error.message); else load(); };
+  const link = (c: string) => `${window.location.origin}/?invite=${c}`;
+  return (
+    <Page title="Team" kicker="Members and invites" back={back} backLabel="Home">
+      <h3>Invite someone</h3>
+      <div className="pills">{Object.entries(ROLE_LABEL).filter(([k]) => k !== 'franchisor').map(([k, l]) => <button key={k} className={role === k ? 'on' : ''} onClick={() => setRole(k)}>{l}</button>)}</div>
+      <button className="btn" onClick={make}>Create invite link</button>
+      {msg && <div className="err">{msg}</div>}
+      {invites.map((i) => (
+        <div key={i.code} className="card"><b>{ROLE_LABEL[i.role] || i.role} invite</b><div className="muted" style={{ wordBreak: 'break-all' }}>{link(i.code)}</div>
+          <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(link(i.code)); setCopied(i.code); }}>{copied === i.code ? 'Copied ✓' : 'Copy link'}</button></div>
+      ))}
+      <div className="muted">Each link works once and expires in 14 days. The person signs up, and joins this company.</div>
+      <h3>Members</h3>
+      <div className="group" style={{ margin: '0 -20px' }}>{members.map((m) => <div key={m.user_id} className="row static"><span className="grow">{m.name}</span><span className="tag">{ROLE_LABEL[m.role] || m.role}</span></div>)}</div>
+    </Page>
+  );
+}
+
+function BrandScreen({ name, brand, back, onSave }: { name: string; brand: Brand; back: () => void; onSave: (name: string, b: Brand) => Promise<void> }) {
+  const [n, setN] = useState(name), [b, setB] = useState<Brand>(brand), [saved, setSaved] = useState(false);
+  const f = (k: keyof Brand, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={b[k] || ''} onChange={(e) => { setB({ ...b, [k]: e.target.value }); setSaved(false); }} /></div>;
+  return (
+    <Page title="Company & brand" kicker="Shown on login, proposals and messages" back={back} backLabel="Home">
+      <div className="field"><label className="lbl">Company name</label><input className="in" value={n} onChange={(e) => { setN(e.target.value); setSaved(false); }} /></div>
+      {f('tagline', 'Tagline', 'We diagnose. We solve. We protect what matters.')}
+      {f('phone', 'Phone')}
+      {f('web', 'Website')}
+      {f('logo', 'Logo web address (PNG or SVG)', 'https://…')}
+      <div className="actions"><button className="btn" disabled={!n.trim()} onClick={async () => { await onSave(n.trim(), b); setSaved(true); }}>{saved ? 'Saved ✓' : 'Save'}</button></div>
+    </Page>
+  );
+}
+
+function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]; active?: string; back: () => void; onEnter: (id: string) => void; onCreate: (name: string, slug: string) => Promise<string> }) {
+  const [name, setName] = useState(''), [slug, setSlug] = useState(''), [msg, setMsg] = useState('');
+  return (
+    <Page title="All companies" kicker="Developer" sub="Everyone on the platform. Each company has its own data, team, catalog and branding." back={back} backLabel="Home">
+      <div className="card"><b>Create a company</b>
+        <input className="in" placeholder="Company name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="in" placeholder="Login link name (optional, e.g. zplumberz)" value={slug} onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, ''))} />
+        <button className="btn" disabled={!name.trim()} onClick={async () => { setMsg(await onCreate(name, slug)); }}>Create and open</button>
+        {msg && <div className="err">{msg}</div>}
+        <div className="muted">New companies start with a copy of the SWS product catalog. You become its admin; then invite its owner from Team.</div>
+      </div>
+      <div className="group" style={{ margin: '0 -20px' }}>
+        {list.map((c) => <button key={c.id} className="row" onClick={() => c.id !== active && onEnter(c.id)}><span className="grow"><b>{c.name}</b><div className="muted">{c.slug ? `/?co=${c.slug}` : 'No login link'}</div></span>{c.id === active ? <span className="donetag"><Check size={16} />Open</span> : <ChevronRight size={18} />}</button>)}
+      </div>
+    </Page>
+  );
+}
+
+function PendingScreen({ user, err, dev, onRedeem, onSignOut }: { user: string; err?: string; dev: boolean; onRedeem: (code: string) => Promise<string>; onSignOut: () => void }) {
+  const [code, setCode] = useState(''), [msg, setMsg] = useState(err || ''), [busy, setBusy] = useState(false);
+  return (
+    <Page title="Join your company" kicker="One more step" sub={user} right={<button className="backbtn" onClick={onSignOut}>Sign out</button>}>
+      <div className="card"><b>You're signed in, but not part of a company yet.</b><div className="muted">Open the invite link your company admin sent you, or paste its code here.</div></div>
+      <div className="field"><label className="lbl">Invite code or link</label><input className="in" value={code} onChange={(e) => setCode(e.target.value)} placeholder="a1b2c3d4e5f6" /></div>
+      {msg && <div className="err">{msg}</div>}
+      <button className="btn" disabled={busy || !code.trim()} onClick={async () => { setBusy(true); const c = code.trim().split('invite=').pop()!; setMsg(await onRedeem(c)); setBusy(false); }}>Join company</button>
+      {dev && <div className="muted">You are the platform developer: ask for a company to be created and it will appear here.</div>}
+    </Page>
+  );
+}
+
 function Page({ title, sub, back, backLabel, right, kicker, segs, light, children }: { title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
   const head = (
     <>
@@ -520,7 +688,7 @@ function TabBar({ screen, admin, dev, go, onMe }: { screen: string; admin: boole
   );
 }
 
-function Login({ onLogin, onAuth }: { onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
+function Login({ onLogin, onAuth, brand }: { brand: (Brand & { name: string }) | null; onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
   const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [guest, setGuest] = useState(false);
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
   const forgot = async () => {
@@ -531,9 +699,9 @@ function Login({ onLogin, onAuth }: { onLogin: (u: string, role: 'tech' | 'plumb
   return (
     <main className="loginwrap">
       <header className="loginhero">
-        <img src="/sws-logo-white.png" alt="Soft Water Specialists" className="herologo" width={260} height={68} />
+        {!brand ? <img src="/sws-logo-white.png" alt="Soft Water Specialists" className="herologo" width={260} height={68} /> : brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>}
         <div>
-          <h1>We diagnose. We solve. We protect what matters.</h1>
+          <h1>{brand?.tagline || 'We diagnose. We solve. We protect what matters.'}</h1>
           <div className="sub">Sign in to your water evaluations</div>
         </div>
       </header>
