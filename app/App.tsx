@@ -4,9 +4,10 @@ import { Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, Messag
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
-type Brand = { tagline?: string; phone?: string; web?: string; logo?: string };
+type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
+type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
 type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
@@ -14,6 +15,17 @@ type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string,
 const KEY = 'sws-app-v1';
 const GROUPS = ['Assess', 'Inspect', 'Plan', 'Close'];
 const GROUP_OF: Record<string, string> = { s1: 'Assess', sB: 'Assess', s2: 'Assess', s3: 'Assess', s4: 'Assess', s5: 'Assess', s6: 'Inspect', s7: 'Inspect', s8: 'Inspect', s9: 'Plan', s10: 'Plan', s14: 'Close', s16: 'Close' };
+const shade = (hex: string, f: number) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16), c = (v: number) => Math.max(0, Math.min(255, Math.round(v * f)));
+  return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => c(v).toString(16).padStart(2, '0')).join('');
+};
+const applyTheme = (color?: string, dark?: string) => {
+  const r = document.documentElement.style, a = color || '#1f72d6', d = dark || '#0b2a5c';
+  r.setProperty('--accent', a); r.setProperty('--a600', shade(a, 0.9)); r.setProperty('--a700', shade(a, 0.75));
+  r.setProperty('--navy9', d); r.setProperty('--navy8', shade(d, 1.22));
+};
 const DEFAULT_KITS = JSON.parse(JSON.stringify(KITS)) as typeof KITS;
 const DEFAULT_RULES = RULES.map((r) => ({ ...r }));
 const DEFAULT_CAT = JSON.parse(JSON.stringify(CAT)) as typeof CAT;
@@ -28,11 +40,13 @@ export default function App() {
   const remoteSettings = useRef<Record<string, any>>({});
   const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
   const [loginBrand, setLoginBrand] = useState<(Brand & { name: string }) | null>(null);
+  const [plat, setPlat] = useState<Plat>({});
   useEffect(() => {
     try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), online: navigator.onLine }); } catch {}
     try {
       const q = new URLSearchParams(window.location.search);
       const inv = q.get('invite'), co = q.get('co');
+      supabase.rpc('platform_brand').then(({ data }) => { if (data) setPlat(data); });
       if (inv) { localStorage.setItem('sws-invite', inv); window.history.replaceState({}, '', window.location.pathname); }
       if (co) supabase.rpc('public_brand', { p_slug: co }).then(({ data }) => { if (data) setLoginBrand({ name: data.name, ...(data.brand || {}) }); });
     } catch {}
@@ -106,6 +120,11 @@ export default function App() {
     }, 1000);
     return () => clearTimeout(t);
   }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.brand, st.uid, st.companyId, st.role]);
+  useEffect(() => {
+    const b = st.uid ? st.brand : loginBrand || plat;
+    applyTheme((b as any)?.color || (st.uid ? undefined : plat.color), (b as any)?.dark || (st.uid ? undefined : plat.dark));
+  }, [st.uid, st.brand, loginBrand, plat]);
+  useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Sell'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
   const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
@@ -130,7 +149,7 @@ export default function App() {
   return (
     <div className={'shell ' + (['jobs', 'admin', 'help', 'switch'].includes(st.screen) ? 'withtabs' : '')}>
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
-      {st.screen === 'login' && <Login brand={loginBrand} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
+      {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
         const now = new Date(), first = (st.user || 'there').split(' ')[0];
         const week = Array.from({ length: 7 }, (_, k) => { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7) + k); return d; });
@@ -366,6 +385,7 @@ export default function App() {
               ['Team', 'Members and invites', 'team', Users],
               ['Company & brand', 'Name, logo, contact', 'brand', Palette],
               ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
+              ...(st.dev ? [['Platform brand', 'App name, logo, colors', 'platform', Palette]] : []),
               ...(st.dev ? [['All companies', `${(st.companies || []).length} on the platform`, 'companies', Building2]] : []),
             ] as [string, string, Screen, any][]).map(([t, sub, to, Ic]) => (
               <button key={t} className="tile" onClick={() => go(to)}><span className="ico"><Ic size={22} /></span><b>{t}</b><span className="muted">{sub}</span></button>
@@ -476,6 +496,9 @@ export default function App() {
         </Page>
       )}
       {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
+      {st.screen === 'platform' && (
+        <PlatformScreen plat={plat} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
+      )}
       {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} back={() => go('admin')} />}
       {st.screen === 'brand' && st.companyId && (
         <BrandScreen name={coName} brand={st.brand || {}} back={() => go('admin')}
@@ -604,6 +627,24 @@ function TeamScreen({ companyId, back }: { companyId: string; back: () => void }
   );
 }
 
+function PlatformScreen({ plat, back, onSave }: { plat: Plat; back: () => void; onSave: (p: Plat) => Promise<string> }) {
+  const [p, setP] = useState<Plat>(plat), [msg, setMsg] = useState('');
+  const f = (k: keyof Plat, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={p[k] || ''} onChange={(e) => { setP({ ...p, [k]: e.target.value }); setMsg(''); }} /></div>;
+  return (
+    <Page title="Platform brand" kicker="Developer" sub="The app's own name and look, shown on the login page and for companies that haven't set their own brand." back={back} backLabel="Home">
+      {f('app_name', 'App name', 'Soft Sell')}
+      {f('tagline', 'Login tagline', 'Sign in to your account')}
+      {f('logo', 'Logo web address (PNG or SVG)', 'https://…')}
+      <div className="pricegrid">
+        <div className="field"><label className="lbl">Accent color</label><input className="in colorin" type="color" value={p.color || '#1f72d6'} onChange={(e) => { setP({ ...p, color: e.target.value }); setMsg(''); }} /></div>
+        <div className="field"><label className="lbl">Header color</label><input className="in colorin" type="color" value={p.dark || '#0b2a5c'} onChange={(e) => { setP({ ...p, dark: e.target.value }); setMsg(''); }} /></div>
+      </div>
+      <div className="muted">Each company can override all of this under Company &amp; brand. The home-screen icon and install name are fixed in the app's files.</div>
+      <div className="actions"><button className="btn" onClick={async () => setMsg((await onSave(p)) || 'Saved ✓')}>{msg || 'Save'}</button></div>
+    </Page>
+  );
+}
+
 function BrandScreen({ name, brand, back, onSave }: { name: string; brand: Brand; back: () => void; onSave: (name: string, b: Brand) => Promise<void> }) {
   const [n, setN] = useState(name), [b, setB] = useState<Brand>(brand), [saved, setSaved] = useState(false);
   const f = (k: keyof Brand, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={b[k] || ''} onChange={(e) => { setB({ ...b, [k]: e.target.value }); setSaved(false); }} /></div>;
@@ -614,24 +655,48 @@ function BrandScreen({ name, brand, back, onSave }: { name: string; brand: Brand
       {f('phone', 'Phone')}
       {f('web', 'Website')}
       {f('logo', 'Logo web address (PNG or SVG)', 'https://…')}
+      <div className="pricegrid">
+        <div className="field"><label className="lbl">Accent color</label><input className="in colorin" type="color" value={b.color || '#1f72d6'} onChange={(e) => { setB({ ...b, color: e.target.value }); setSaved(false); }} /></div>
+        <div className="field"><label className="lbl">Header color</label><input className="in colorin" type="color" value={b.dark || '#0b2a5c'} onChange={(e) => { setB({ ...b, dark: e.target.value }); setSaved(false); }} /></div>
+      </div>
       <div className="actions"><button className="btn" disabled={!n.trim()} onClick={async () => { await onSave(n.trim(), b); setSaved(true); }}>{saved ? 'Saved ✓' : 'Save'}</button></div>
     </Page>
   );
 }
 
+type Overview = { id: string; name: string; slug: string | null; admins: string[]; members: number; jobs: number; tickets: number; last_activity: string | null };
+
 function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]; active?: string; back: () => void; onEnter: (id: string) => void; onCreate: (name: string, slug: string) => Promise<string> }) {
   const [name, setName] = useState(''), [slug, setSlug] = useState(''), [msg, setMsg] = useState('');
+  const [ov, setOv] = useState<Overview[]>([]), [links, setLinks] = useState<Record<string, string>>({}), [copied, setCopied] = useState('');
+  useEffect(() => { supabase.rpc('company_overview').then(({ data }) => { if (data) setOv(data); }); }, [list.length]);
+  const invite = async (id: string) => {
+    const { data, error } = await supabase.rpc('create_invite', { p_company: id, p_role: 'admin' });
+    if (error) { setMsg(error.message); return; }
+    setLinks((l) => ({ ...l, [id]: `${window.location.origin}/?invite=${data}` }));
+  };
+  const when = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No activity yet');
   return (
     <Page title="All companies" kicker="Developer" sub="Everyone on the platform. Each company has its own data, team, catalog and branding." back={back} backLabel="Home">
+      {ov.map((c) => (
+        <div key={c.id} className={'card ' + (c.id === active ? 'best' : '')}>
+          <div className="between"><h3>{c.name}</h3>{c.id === active && <span className="tag">Open</span>}</div>
+          <div className="muted">{c.slug ? `Login link: /?co=${c.slug}` : 'No login link'}</div>
+          <div>{c.admins.length ? <>Owner: <b>{c.admins.join(', ')}</b></> : <b>No owner yet</b>}</div>
+          <div className="muted">{c.members} {c.members === 1 ? 'person' : 'people'} · {c.jobs} jobs · {c.tickets} tickets · {when(c.last_activity)}</div>
+          {links[c.id] && <div className="okmsg" style={{ wordBreak: 'break-all' }}>{links[c.id]}</div>}
+          <div className="btnrow">
+            {c.id !== active && <button className="btn ghost sm" onClick={() => onEnter(c.id)}>Open</button>}
+            <button className="btn ghost sm" onClick={() => (links[c.id] ? (navigator.clipboard?.writeText(links[c.id]), setCopied(c.id)) : invite(c.id))}>{links[c.id] ? (copied === c.id ? 'Copied ✓' : 'Copy link') : 'Invite owner'}</button>
+          </div>
+        </div>
+      ))}
+      {msg && <div className="err">{msg}</div>}
       <div className="card"><b>Create a company</b>
         <input className="in" placeholder="Company name" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="in" placeholder="Login link name (optional, e.g. zplumberz)" value={slug} onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, ''))} />
         <button className="btn" disabled={!name.trim()} onClick={async () => { setMsg(await onCreate(name, slug)); }}>Create and open</button>
-        {msg && <div className="err">{msg}</div>}
-        <div className="muted">New companies start with a copy of the SWS product catalog. You become its admin; then invite its owner from Team.</div>
-      </div>
-      <div className="group" style={{ margin: '0 -20px' }}>
-        {list.map((c) => <button key={c.id} className="row" onClick={() => c.id !== active && onEnter(c.id)}><span className="grow"><b>{c.name}</b><div className="muted">{c.slug ? `/?co=${c.slug}` : 'No login link'}</div></span>{c.id === active ? <span className="donetag"><Check size={16} />Open</span> : <ChevronRight size={18} />}</button>)}
+        <div className="muted">New companies start with a copy of the product catalog. Then use Invite owner to send its owner a link; they sign up and become its admin.</div>
       </div>
     </Page>
   );
@@ -688,7 +753,7 @@ function TabBar({ screen, admin, dev, go, onMe }: { screen: string; admin: boole
   );
 }
 
-function Login({ onLogin, onAuth, brand }: { brand: (Brand & { name: string }) | null; onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
+function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & { name: string }) | null; onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
   const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [guest, setGuest] = useState(false);
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
   const forgot = async () => {
@@ -699,10 +764,10 @@ function Login({ onLogin, onAuth, brand }: { brand: (Brand & { name: string }) |
   return (
     <main className="loginwrap">
       <header className="loginhero">
-        {!brand ? <img src="/sws-logo-white.png" alt="Soft Water Specialists" className="herologo" width={260} height={68} /> : brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>}
+        {brand ? (brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>) : plat.logo ? <img src={plat.logo} alt={plat.app_name} className="herologo" /> : <b className="herotext">{plat.app_name || 'Soft Sell'}</b>}
         <div>
-          <h1>{brand?.tagline || 'We diagnose. We solve. We protect what matters.'}</h1>
-          <div className="sub">Sign in to your water evaluations</div>
+          <h1>{brand?.tagline || plat.tagline || 'Sign in to your account'}</h1>
+          <div className="sub">Sign in to continue</div>
         </div>
       </header>
       <div className="body loginbody">

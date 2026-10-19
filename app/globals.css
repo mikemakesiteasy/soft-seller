@@ -1,4 +1,4 @@
-:root{--bg:#f7f9fc;--surface:#edf1f6;--navy:#0d2550;--navy9:#0b2a5c;--accent:#1f72d6;--a100:#eef4fc;--a200:#dbe8f8;--a300:#bcd4f1;--a400:#8ab5e6;--a600:#1a63bd;--a700:#134f9a;--n300:#d3dae4;--n400:#b3bcc9;--n500:#8f99a8;--n600:#707b8b;--line:rgba(13,37,80,.4);--soft:rgba(13,37,80,.18);--err:#b42318;--errbg:#fde8e8;--shadow:0 1px 2px rgba(13,37,80,.12)}
+:root{--navy8:#0e3472;--bg:#f7f9fc;--surface:#edf1f6;--navy:#0d2550;--navy9:#0b2a5c;--accent:#1f72d6;--a100:#eef4fc;--a200:#dbe8f8;--a300:#bcd4f1;--a400:#8ab5e6;--a600:#1a63bd;--a700:#134f9a;--n300:#d3dae4;--n400:#b3bcc9;--n500:#8f99a8;--n600:#707b8b;--line:rgba(13,37,80,.4);--soft:rgba(13,37,80,.18);--err:#b42318;--errbg:#fde8e8;--shadow:0 1px 2px rgba(13,37,80,.12)}
 *{box-sizing:border-box;border-radius:0}
 html,body{margin:0;min-height:100%;background:var(--navy9);color:var(--navy);font-family:'Archivo',system-ui,sans-serif;font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%;overscroll-behavior:none}
 body{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
@@ -141,7 +141,7 @@ footer{display:flex;flex-direction:column;align-items:center;gap:6px}footer img{
 .tile b{font-size:16px;margin-top:6px}.tile.static{cursor:default;width:100%;min-height:0}
 .ico{width:40px;height:40px;background:var(--a100);color:var(--a700);display:flex;align-items:center;justify-content:center}
 
-.loginhero{min-height:250px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 22px 26px;color:#fff;background-color:#0b2a5c;background-image:linear-gradient(180deg,rgba(8,28,64,.55) 0%,rgba(8,28,64,.25) 40%,rgba(8,28,64,.94) 100%),url(/login-hero.jpg);background-size:cover;background-position:center}
+.loginhero{min-height:250px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 22px 26px;color:#fff;background-color:var(--navy9);background-image:linear-gradient(180deg,rgba(8,28,64,.55) 0%,rgba(8,28,64,.25) 40%,rgba(8,28,64,.94) 100%),url(/login-hero.jpg);background-size:cover;background-position:center}
 .loginhero h1{font-size:32px;text-wrap:balance}
 .loginhero .sub{font-size:14px;color:#c9d8ef;margin-top:10px}
 .herologo{width:260px;max-width:100%;height:auto}
@@ -159,7 +159,7 @@ html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 body{font-feature-settings:'tnum' 1,'cv11' 1}
 @keyframes screenin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 main{animation:screenin .22s var(--ease) both}
-header.dark{background:linear-gradient(180deg,#0b2a5c 0%,#0e3472 100%);position:relative}
+header.dark{background:linear-gradient(180deg,var(--navy9) 0%,var(--navy8) 100%);position:relative}
 header.dark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--accent),#3d8ee0 60%,transparent)}
 .loginhero::after{display:none}
 .card,.jobcard,.tile{transition:transform .18s var(--ease),box-shadow .18s var(--ease),border-color .18s var(--ease)}
@@ -197,3 +197,4 @@ h1.big{background:linear-gradient(180deg,#fff,#cfe0f7);-webkit-background-clip:t
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .herotext{font-size:24px;font-weight:800;letter-spacing:-.01em}
 .co{cursor:pointer;text-align:left;background:var(--bg)}
+.colorin{padding:4px;height:48px;cursor:pointer}
