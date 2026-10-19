@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type JobData = { values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 const GROUPS = ['Assess', 'Inspect', 'Plan', 'Close'];
@@ -35,7 +35,7 @@ export default function App() {
       const { data: p } = await supabase.from('profiles').select('company_id,role,display_name').maybeSingle();
       const email = session.user.email as string;
       if (!p) { setSt((x) => ({ ...x, screen: 'pending', user: email, uid: session.user.id, companyId: undefined })); return; }
-      const role = p.role === 'admin' ? 'admin' : p.role === 'plumber' || p.role === 'dealer' ? 'plumber' : 'tech';
+      const role = p.role === 'admin' || p.role === 'developer' ? 'admin' : p.role === 'plumber' || p.role === 'dealer' ? 'plumber' : 'tech';
       const { data: rows } = await supabase.from('jobs').select('id,data');
       const [{ data: cat }, { data: co }, { data: tk }] = await Promise.all([
         supabase.from('catalog_items').select('sku,cost,msrp'),
@@ -47,7 +47,7 @@ export default function App() {
       const prices = Object.fromEntries((cat || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp) }]));
       const tickets = (tk || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === session.user.id ? email : 'Team member' }));
       const remote: Record<string, JobData> = Object.fromEntries((rows || []).map((r: any) => [r.id, r.data]));
-      setSt((x) => ({ ...x, ...cfg, prices, tickets, uid: session.user.id, companyId: p.company_id, role, user: p.display_name || email, jobs: { ...x.jobs, ...remote },
+      setSt((x) => ({ ...x, ...cfg, prices, tickets, dev: p.role === 'developer', uid: session.user.id, companyId: p.company_id, role, user: p.display_name || email, jobs: { ...x.jobs, ...remote },
         screen: x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen }));
     };
     supabase.auth.getSession().then(({ data }) => handle(data.session));
@@ -76,7 +76,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {} })); };
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false })); };
   Object.entries(st.prices || {}).forEach(([k, p]) => CAT[k] && Object.assign(CAT[k], p));
   if (st.kits) Object.assign(KITS, st.kits);
   if (st.rules) RULES.splice(0, RULES.length, ...st.rules);
@@ -91,7 +91,7 @@ export default function App() {
   const flowSecs = jd ? (jd.flow === 'quick' ? SECS.filter((s) => QUICK.includes(s.id)) : SECS) : SECS;
 
   return (
-    <div className={'shell ' + (['jobs', 'admin', 'help'].includes(st.screen) ? 'withtabs' : '')}>
+    <div className={'shell ' + (['jobs', 'admin', 'help', 'switch'].includes(st.screen) ? 'withtabs' : '')}>
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
       {st.screen === 'login' && <Login onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
@@ -419,12 +419,19 @@ export default function App() {
           <label className="check"><input type="checkbox" checked={!!st.diy} onChange={(e) => setSt((x) => ({ ...x, diy: e.target.checked }))} />Allow DIY homeowners (off by default)</label>
         </Page>
       )}
+      {st.screen === 'switch' && (
+        <Page title="View as" kicker="Developer" sub="See the app the way each role does. Your account stays the same.">
+          {([['Technician', 'tech', 'jobs'], ['Plumbing partner', 'plumber', 'jobs'], ['Admin', 'admin', 'admin']] as ['' | string, 'tech' | 'plumber' | 'admin', Screen][]).map(([l, r, to]) => (
+            <button key={l} className={'row ' + (st.role === r ? 'cur' : '')} onClick={() => go(to, { role: r })}><span className="grow">{l}</span>{st.role === r && <span className="donetag"><Check size={16} />Current</span>}<ChevronRight size={18} /></button>
+          ))}
+        </Page>
+      )}
       {st.screen === 'pending' && (
         <Page title="Almost there" sub={st.user} right={<button className="link" onClick={signOut}>Sign out</button>}>
           <div className="card"><b>Your account is waiting for access.</b><div className="muted">An admin needs to add you to a company. Ask Matt, then sign in again.</div></div>
         </Page>
       )}
-      {['jobs', 'admin', 'help'].includes(st.screen) && <TabBar screen={st.screen} admin={st.role === 'admin'} go={(x) => go(x)} onMe={signOut} />}
+      {['jobs', 'admin', 'help', 'switch'].includes(st.screen) && <TabBar screen={st.screen} admin={st.role === 'admin'} dev={st.dev} go={(x) => go(x)} onMe={signOut} />}
       <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
     </div>
   );
@@ -499,10 +506,11 @@ function Page({ title, sub, back, backLabel, right, kicker, segs, light, childre
   );
 }
 
-function TabBar({ screen, admin, go, onMe }: { screen: string; admin: boolean; go: (s: Screen) => void; onMe: () => void }) {
+function TabBar({ screen, admin, dev, go, onMe }: { screen: string; admin: boolean; dev?: boolean; go: (s: Screen) => void; onMe: () => void }) {
   const tabs = [
     { k: admin ? 'admin' : 'jobs', l: admin ? 'Home' : 'Jobs', I: House, on: () => go(admin ? 'admin' : 'jobs') },
     { k: 'help', l: 'Help', I: CircleHelp, on: () => go('help') },
+    ...(dev ? [{ k: 'switch', l: 'Switch', I: Repeat, on: () => go('switch') }] : []),
     { k: 'me', l: 'Sign out', I: User, on: onMe },
   ];
   return (
