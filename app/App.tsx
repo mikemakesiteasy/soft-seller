@@ -1,13 +1,16 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
+import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
 type Screen = 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type JobData = { values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
 type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number }>; online: boolean };
 
 const KEY = 'sws-app-v1';
+const GROUPS = ['Assess', 'Inspect', 'Plan', 'Close'];
+const GROUP_OF: Record<string, string> = { s1: 'Assess', sB: 'Assess', s2: 'Assess', s3: 'Assess', s4: 'Assess', s5: 'Assess', s6: 'Inspect', s7: 'Inspect', s8: 'Inspect', s9: 'Plan', s10: 'Plan', s14: 'Close', s16: 'Close' };
 const blank = (j: (typeof JOBS)[number], flow: 'full' | 'quick' = 'full'): JobData => ({
   flow, parts: {}, other: [],
   values: { 's1.name': j.name, 's1.address': j.address, 's1.city': j.city, 's1.state': j.state, 's1.zip': j.zip, 's1.phone': j.phone, 's3.happiest': '' },
@@ -16,6 +19,7 @@ const blank = (j: (typeof JOBS)[number], flow: 'full' | 'quick' = 'full'): JobDa
 export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
+  const remoteSettings = useRef<Record<string, any>>({});
   useEffect(() => {
     try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), online: navigator.onLine }); } catch {}
     setReady(true);
@@ -33,8 +37,17 @@ export default function App() {
       if (!p) { setSt((x) => ({ ...x, screen: 'pending', user: email, uid: session.user.id, companyId: undefined })); return; }
       const role = p.role === 'admin' ? 'admin' : p.role === 'plumber' || p.role === 'dealer' ? 'plumber' : 'tech';
       const { data: rows } = await supabase.from('jobs').select('id,data');
+      const [{ data: cat }, { data: co }, { data: tk }] = await Promise.all([
+        supabase.from('catalog_items').select('sku,cost,msrp'),
+        supabase.from('companies').select('settings').maybeSingle(),
+        supabase.from('tickets').select('id,topic,routed_to,body,urgent,author_id'),
+      ]);
+      remoteSettings.current = co?.settings || {};
+      const cfg = remoteSettings.current;
+      const prices = Object.fromEntries((cat || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp) }]));
+      const tickets = (tk || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === session.user.id ? email : 'Team member' }));
       const remote: Record<string, JobData> = Object.fromEntries((rows || []).map((r: any) => [r.id, r.data]));
-      setSt((x) => ({ ...x, uid: session.user.id, companyId: p.company_id, role, user: p.display_name || email, jobs: { ...x.jobs, ...remote },
+      setSt((x) => ({ ...x, ...cfg, prices, tickets, uid: session.user.id, companyId: p.company_id, role, user: p.display_name || email, jobs: { ...x.jobs, ...remote },
         screen: x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen }));
     };
     supabase.auth.getSession().then(({ data }) => handle(data.session));
@@ -49,6 +62,19 @@ export default function App() {
     }, 1000);
     return () => clearTimeout(t);
   }, [st.jobs, st.uid, st.companyId]);
+  useEffect(() => {
+    if (!st.uid || !st.companyId || st.role !== 'admin') return;
+    const t = setTimeout(() => {
+      const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
+      if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
+      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy }).filter(([, v]) => v !== undefined)) };
+      if (JSON.stringify(next) !== JSON.stringify(remoteSettings.current)) {
+        remoteSettings.current = next;
+        supabase.from('companies').update({ settings: next }).eq('id', st.companyId!).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
   if (!ready) return null;
   const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {} })); };
   Object.entries(st.prices || {}).forEach(([k, p]) => CAT[k] && Object.assign(CAT[k], p));
@@ -65,79 +91,122 @@ export default function App() {
   const flowSecs = jd ? (jd.flow === 'quick' ? SECS.filter((s) => QUICK.includes(s.id)) : SECS) : SECS;
 
   return (
-    <div className="shell">
+    <div className={'shell ' + (['jobs', 'admin', 'help'].includes(st.screen) ? 'withtabs' : '')}>
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
       {st.screen === 'login' && <Login onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
-      {st.screen === 'jobs' && (
-        <Page title="Today's jobs" sub={`${st.user || 'Technician'}${isPartner ? ' · partner' : ''} · synced from Housecall Pro`} right={<span><button className="link" onClick={() => go('help')}>Help</button> <button className="link" onClick={() => signOut()}>Sign out</button></span>}>
-          {JOBS.map((j) => {
-            const d = st.jobs[j.id];
-            const done = d ? pct(d, SECS) : 0;
-            return (
-              <button key={j.id} className="row" onClick={() => go('overview', { jobId: j.id, jobs: { ...st.jobs, [j.id]: d || blank(j, isPartner ? 'quick' : 'full') } })}>
-                <div className="time">{j.time}</div>
-                <div className="grow"><b>{j.name}</b><div className="muted">{j.address}, {j.city}</div><div className="muted">{j.reason}</div></div>
-                {d && <span className="chip">{done}%</span>}
-              </button>
-            );
-          })}
-        </Page>
-      )}
-      {st.screen === 'overview' && job && jd && (
-        <Page title={job.name} sub={`${job.address}, ${job.city}`} back={() => go('jobs')}>
-          <div className="seg">
-            {(['full', 'quick'] as const).map((f) => (
-              <button key={f} className={jd.flow === f ? 'on' : ''} onClick={() => patch({ flow: f })}>{f === 'full' ? 'Full evaluation' : 'Quick diagnosis'}</button>
-            ))}
-          </div>
-          {flowSecs.map((s, i) => {
-            const c = secDone(jd.values, s.id);
-            return (
-              <button key={s.id} className="row" onClick={() => go('section', { sec: i })}>
-                <span className="num">{s.n}</span><span className="grow"><b>{s.title}</b></span>
-                <span className={'chip ' + (c ? 'ok' : '')}>{c ? 'Done' : 'To do'}</span>
-              </button>
-            );
-          })}
-          <div className="actions">
-            <button className="btn" onClick={() => go('present')}>Present options</button>
-            <button className="btn ghost" onClick={() => go('materials')}>Job materials</button>
-          </div>
-        </Page>
-      )}
-      {st.screen === 'section' && job && jd && (() => {
-        const s = flowSecs[Math.min(st.sec, flowSecs.length - 1)];
-        const last = st.sec >= flowSecs.length - 1;
-        const blocked = s.id === 'sB' && !jd.values['sB.bp'] && !jd.values['sB.bpLater'];
+      {st.screen === 'jobs' && (() => {
+        const now = new Date(), first = (st.user || 'there').split(' ')[0];
+        const week = Array.from({ length: 7 }, (_, k) => { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7) + k); return d; });
+        const hour = now.getHours(), hi = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
         return (
-          <Page title={`${s.n} ${s.title}`} sub={`Step ${st.sec + 1} of ${flowSecs.length}`} back={() => go('overview')}>
-            {s.fields.filter((f) => !f.show || f.show(jd.values)).map((f) => (
-              <FieldView key={f.id} sid={s.id} f={f} v={jd.values} set={setVal} />
+          <main>
+            <header className="dark">
+              <div className="hbar"><span /><span className="hright"><span className="bell"><Bell size={22} /></span><span className="avatar">{(st.user || 'T').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span></span></div>
+              <div className="hero">
+                <div className="greet">{hi}, {first}</div>
+                <h1 className="big">Today</h1>
+                <div className="sub">{now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} · {JOBS.length} evaluations</div>
+              </div>
+              <div className="week">
+                {week.map((d) => <div key={d.getDate()} className={d.toDateString() === now.toDateString() ? 'on' : ''}><span>{d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</span><b>{d.getDate()}</b></div>)}
+              </div>
+            </header>
+            <div className="body jobsbody">
+              {JOBS.map((j) => {
+                const d = st.jobs[j.id];
+                const done = d ? pct(d, SECS) : 0;
+                const [t, ap] = j.time.split(' ');
+                return (
+                  <button key={j.id} className="jobcard" onClick={() => go('overview', { jobId: j.id, jobs: { ...st.jobs, [j.id]: d || blank(j, isPartner ? 'quick' : 'full') } })}>
+                    <div className="time"><b>{t}</b><span>{ap}</span></div>
+                    <div className="grow"><b className="nm">{j.name}</b><div className="addr">{j.address}, {j.city}</div><div className="why">{j.reason}</div>
+                      <div className="tags">{d && <span className="tag">{done === 100 ? 'Complete' : 'In progress'}</span>}<span className="jid">{j.id}</span></div></div>
+                    <ChevronRight size={20} />
+                  </button>
+                );
+              })}
+            </div>
+          </main>
+        );
+      })()}
+      {st.screen === 'overview' && job && jd && (() => {
+        const doneN = flowSecs.filter((x) => secDone(jd.values, x.id)).length, pc = Math.round((doneN / flowSecs.length) * 100);
+        const nextI = Math.max(0, flowSecs.findIndex((x) => !secDone(jd.values, x.id)));
+        return (
+          <Page title={job.name} kicker="Water system evaluation" sub={`${job.address}, ${job.city}`} back={() => go('jobs')} backLabel="Jobs" right={<span>{job.id}</span>} light>
+            <div className="btnrow">
+              <a className="btn ghost sm" href={`tel:${job.phone}`}><Phone size={16} />Call</a>
+              <a className="btn ghost sm" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${encodeURIComponent(job.address + ', ' + job.city)}`}><MapPin size={16} />Directions</a>
+            </div>
+            <div className="seg">
+              {(['full', 'quick'] as const).map((f) => (
+                <button key={f} className={jd.flow === f ? 'on' : ''} onClick={() => patch({ flow: f })}>{f === 'full' ? 'Full evaluation' : 'Quick diagnosis'}</button>
+              ))}
+            </div>
+            <div className="between prog"><span>{doneN} of {flowSecs.length} sections complete</span><span>{pc}%</span></div>
+            <div className="bar"><i style={{ width: pc + '%' }} /></div>
+            {GROUPS.map((g) => {
+              const items = flowSecs.map((x, i) => ({ x, i })).filter(({ x }) => GROUP_OF[x.id] === g);
+              if (!items.length) return null;
+              return (
+                <div key={g} className="group"><h3>{g}</h3>
+                  {items.map(({ x, i }) => {
+                    const c = secDone(jd.values, x.id);
+                    return (
+                      <button key={x.id} className="row" onClick={() => go('section', { sec: i })}>
+                        <span className={'num ' + (c ? 'ok' : '')}>{x.n}</span><span className="grow">{x.title}</span>
+                        {c && <span className="donetag"><Check size={16} />Done</span>}<ChevronRight size={18} />
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            <div className="actions">
+              <button className="btn" onClick={() => go('section', { sec: nextI })}>Continue: {flowSecs[nextI].n} {flowSecs[nextI].title}</button>
+              <div className="btnrow"><button className="btn ghost" onClick={() => go('present')}>Present options</button><button className="btn ghost" onClick={() => go('materials')}>Job materials</button></div>
+            </div>
+          </Page>
+        );
+      })()}
+      {st.screen === 'section' && job && jd && (() => {
+        const idx = Math.min(st.sec, flowSecs.length - 1), s2 = flowSecs[idx];
+        const last = idx >= flowSecs.length - 1;
+        const blocked = s2.id === 'sB' && !jd.values['sB.bp'] && !jd.values['sB.bpLater'];
+        const nx = flowSecs[idx + 1];
+        return (
+          <Page title={<><span className="hnum">{s2.n}</span> {s2.title}</>} kicker={`${GROUP_OF[s2.id]} · ${idx + 1} of ${flowSecs.length}`} segs={{ n: flowSecs.length, i: idx }} back={() => go('overview')} backLabel="Sections" right={<span>{job.name}</span>}>
+            {s2.fields.filter((f) => !f.show || f.show(jd.values)).map((f) => (
+              <FieldView key={f.id} sid={s2.id} f={f} v={jd.values} set={setVal} />
             ))}
             {blocked && <div className="err">A before photo is required to continue. Take one, or check “taken on phone camera”.</div>}
-            <div className="actions">
-              {st.sec > 0 && <button className="btn ghost" onClick={() => go('section', { sec: st.sec - 1 })}>Back</button>}
-              <button className="btn" disabled={blocked} onClick={() => (last ? go('overview') : go('section', { sec: st.sec + 1 }))}>{last ? 'Finish' : 'Next'}</button>
+            <div className="actions row2">
+              {idx > 0 && <button className="btn ghost sq" aria-label="Previous" onClick={() => go('section', { sec: idx - 1 })}><ChevronLeft size={20} /></button>}
+              <button className="btn" disabled={blocked} onClick={() => (last ? go('overview') : go('section', { sec: idx + 1 }))}>{last ? 'Finish' : `Next: ${nx.n} ${nx.title}`}</button>
             </div>
           </Page>
         );
       })()}
       {st.screen === 'present' && job && jd && (() => {
-        const ts = tiers(jd.values);
+        const ts = tiers(jd.values), pick = jd.choice || 'Best';
         const none = !Object.keys(recommend(jd.values).out).length;
         return (
-          <Page title="Your options" sub="Monthly payments are placeholders (7.99% APR, 60 mo)" back={() => go('overview')}>
+          <Page title="Your water plan" kicker={`Prepared for ${job.name} by Soft Water Specialists`} back={() => go('overview')} backLabel="Technician view">
             {none && <div className="err">Enter water test results first so a recommendation can be built.</div>}
             {ts.map((t) => (
-              <div key={t.name} className={'card ' + (t.name === 'Best' ? 'best' : '')}>
-                <div className="between"><h3>{t.name}</h3>{t.name === 'Best' && <span className="chip ok">Recommended</span>}</div>
+              <button key={t.name} className={'card tier ' + (pick === t.name ? 'best' : '')} onClick={() => patch({ choice: t.name })}>
+                <div className="tierhead"><i className={'radio ' + (pick === t.name ? 'on' : '')} /><h3>{t.name}</h3>{t.name === 'Best' && <span className="tag">Recommended</span>}</div>
                 <div className="muted">{t.sub}</div>
-                <ul>{t.skus.map((s) => <li key={s}>{CAT[s].name}</li>)}<li>Install kit</li></ul>
-                <div className="price">{money(t.total)}</div>
-                <div className="muted">or {money(monthly(t.total))}/mo</div>
-                <button className="btn" onClick={() => { patch({ choice: t.name }); go('proposal'); }}>Choose {t.name}</button>
-              </div>
+                <ul>{t.skus.map((x) => <li key={x}>{CAT[x].name}</li>)}<li>Installation materials</li></ul>
+                <div className="between"><span className="muted">Investment</span><b>{money(t.total)}</b></div>
+                <div className="between"><span className="muted">Or financed</span><b>{money(monthly(t.total))}/mo</b></div>
+              </button>
             ))}
+            <div className="muted">Monthly payments are placeholders (7.99% APR, 60 months).</div>
+            <div className="actions">
+              <button className="btn ghost">Check financing · no credit impact</button>
+              <button className="btn" onClick={() => go('proposal')}>Continue with {pick}</button>
+            </div>
           </Page>
         );
       })()}
@@ -145,11 +214,12 @@ export default function App() {
         const t = tiers(jd.values).find((x) => x.name === jd.choice) || tiers(jd.values)[1];
         const dep = Math.round(t.total * 0.1);
         return (
-          <Page title="Proposal" sub={`${job.name} · ${t.name} option`} back={() => go('present')}>
-            <div className="card">
-              <h3>{t.name}: {money(t.total)}</h3>
-              <ul>{t.skus.map((s) => <li key={s}>{CAT[s].name}</li>)}<li>Install kit</li></ul>
-              <div className="muted">Deposit (10%, placeholder): {money(dep)}</div>
+          <Page title={`${t.name} option`} kicker={`Proposal · ${job.name}`} sub={t.sub} back={() => go('present')} backLabel="Options">
+            <div className="plist">
+              {t.skus.map((x) => <div key={x}>{CAT[x].name}</div>)}<div>Installation materials</div>
+              <div className="between"><span>Investment</span><b>{money(t.total)}</b></div>
+              <div className="between"><span>Or financed</span><b>{money(monthly(t.total))}/mo</b></div>
+              <div className="between"><span>Deposit (10%, placeholder)</span><b>{money(dep)}</b></div>
             </div>
             <FieldView sid="s14" f={SECS.find((s) => s.id === 's14')!.fields[0]} v={jd.values} set={setVal} />
             <FieldView sid="s14" f={SECS.find((s) => s.id === 's14')!.fields[1]} v={jd.values} set={setVal} />
@@ -170,7 +240,7 @@ export default function App() {
         const extra = Object.keys(CAT).filter((k) => !items.find((i) => i.sku === k));
         const setQty = (sku: string, q: number) => patch({ parts: { ...jd.parts, [sku]: Math.max(0, q) } });
         return (
-          <Page title="Job materials" sub="Auto-built from install kits and admin rules" back={() => go('overview')}>
+          <Page title="Job materials" kicker={job.name} sub="Built from the recommended system, its install kit and your worksheet answers. Adjust anything." back={() => go('overview')} backLabel="Sections">
             {!items.length && <div className="muted">No parts yet. Enter water test results and plumbing details.</div>}
             {items.map((i) => (
               <div key={i.sku} className="row static">
@@ -214,7 +284,7 @@ export default function App() {
         const qa = [`${job.name} · ${job.address}, ${job.city}`, `Lead source: ${v['s1.first'] || 'not recorded'}`,
           `Recommended: ${Object.keys(r.out).map((s) => CAT[s]?.name).join('; ') || 'n/a'}`, jd.choice ? `Approved: ${jd.choice} option` : ''].filter(Boolean).join('\n');
         return (
-          <Page title="Job complete" sub="After photo and QA summary" back={() => go('overview')}>
+          <Page title="Evaluation complete" kicker={`${job.name} · ${job.id}`} sub="After photo and QA summary" back={() => go('overview')} backLabel="Sections">
             <FieldView sid="s16" f={SECS.find((s) => s.id === 's16')!.fields[0]} v={v} set={setVal} />
             {need && <div className="err">After photo is required to complete the job.</div>}
             <label className="lbl">QA summary</label>
@@ -230,17 +300,34 @@ export default function App() {
         </Page>
       )}
       {st.screen === 'admin' && (
-        <Page title="Admin" sub={`${st.user} · Soft Water Specialists`} right={<button className="link" onClick={() => signOut()}>Sign out</button>}>
-          <button className="row" onClick={() => go('catalog')}><span className="grow"><b>Products and pricing</b><div className="muted">Edit cost and MSRP</div></span>›</button>
-          <div className="card"><label className="lbl">Plumbing partner discount off MSRP (%)</label>
-            <input className="in" inputMode="numeric" value={disc} onChange={(e) => setSt((x) => ({ ...x, disc: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) }))} /></div>
-          <button className="row" onClick={() => go('kits')}><span className="grow"><b>Kits and rules</b><div className="muted">Install kits per product, parts rules</div></span>›</button>
-          <button className="row" onClick={() => go('packing')}><span className="grow"><b>Packing lists</b><div className="muted">Check items off, send to packer</div></span>›</button>
-          <button className="row" onClick={() => go('porders')}><span className="grow"><b>Partner orders</b><div className="muted">{Object.values(st.jobs).filter((j) => j.ordered).length} wholesale orders</div></span>›</button>
-          <button className="row" onClick={() => go('inbox')}><span className="grow"><b>Support inbox</b><div className="muted">{(st.tickets || []).length} tickets</div></span>›</button>
-          <button className="row" onClick={() => go('messages')}><span className="grow"><b>Messages</b><div className="muted">Push / text / email per event</div></span>›</button>
-          <button className="row" onClick={() => go('setup')}><span className="grow"><b>Setup</b><div className="muted">{(st.setup || []).length}/{SETUP.length} done</div></span>›</button>
-        </Page>
+        <main>
+          <div className="lighthero adminhero">
+            <div className="kicker">Soft Water Specialists · Admin</div>
+            <h1>Home</h1>
+            <div className="muted" style={{ marginTop: 14 }}>Your companies</div>
+            <div className="btnrow cos">
+              <div className="co on"><b>Soft Water Specialists</b><span>Independent</span></div>
+              <div className="co"><b>Z Plumberz of Tri-Cities</b><span>Franchise location · Z Plumberz</span></div>
+            </div>
+          </div>
+          <div className="body tiles">
+            {([
+              ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
+              ['Support inbox', `${(st.tickets || []).length} open`, 'inbox', Headphones],
+              ['Packing lists', `${Object.values(st.jobs).filter((j) => jobItems(j).length).length} jobs`, 'packing', Package],
+              ['Products & pricing', `${CATALOG.length} products`, 'catalog', Box],
+              ['Kits & rules', `${RULES.length} rules`, 'kits', Wrench],
+              ['Messages', 'Push · Text · Email', 'messages', MessageSquare],
+              ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
+            ] as [string, string, Screen, any][]).map(([t, sub, to, Ic]) => (
+              <button key={t} className="tile" onClick={() => go(to)}><span className="ico"><Ic size={22} /></span><b>{t}</b><span className="muted">{sub}</span></button>
+            ))}
+            <div className="tile static"><b>Plumbing partner discount</b>
+              <label className="lbl">% off MSRP</label>
+              <input className="in" inputMode="numeric" value={disc} onChange={(e) => setSt((x) => ({ ...x, disc: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) }))} />
+            </div>
+          </div>
+        </main>
       )}
       {st.screen === 'catalog' && (
         <Page title="Products and pricing" sub="Changes apply to proposals and partner orders" back={() => go('admin')}>
@@ -306,7 +393,7 @@ export default function App() {
           {!Object.values(st.jobs).some((d) => d.ordered) && <div className="muted">No partner orders yet.</div>}
         </Page>
       )}
-      {st.screen === 'help' && <HelpScreen role={st.role} user={st.user || ''} back={() => go('jobs')} onSend={(t) => { setSt((x) => ({ ...x, tickets: [...(x.tickets || []), { ...t, id: (x.tickets || []).length + 1, from: x.user || '' }] })); }} />}
+      {st.screen === 'help' && <HelpScreen role={st.role} user={st.user || ''} back={() => go('jobs')} onSend={(t) => { if (st.uid && st.companyId) supabase.from('tickets').insert({ company_id: st.companyId, author_id: st.uid, topic: t.topic, routed_to: t.to, body: t.text, urgent: t.urgent }).then(({ error }) => { if (error) console.warn('ticket sync failed', error.message); }); setSt((x) => ({ ...x, tickets: [...(x.tickets || []), { ...t, id: (x.tickets || []).length + 1, from: x.user || '' }] })); }} />}
       {st.screen === 'inbox' && (
         <Page title="Support inbox" sub="Routed by topic" back={() => go('admin')}>
           {(st.tickets || []).map((t) => <div key={t.id} className="card"><div className="between"><b>#{t.id} {t.topic}</b>{t.urgent && <span className="chip" style={{ background: '#fde8e8', color: '#b42318' }}>Urgent</span>}</div><div className="muted">{t.from} → {t.to}</div><div>{t.text}</div></div>)}
@@ -337,7 +424,8 @@ export default function App() {
           <div className="card"><b>Your account is waiting for access.</b><div className="muted">An admin needs to add you to a company. Ask Matt, then sign in again.</div></div>
         </Page>
       )}
-      <footer>Powered by pdmrocks.com</footer>
+      {['jobs', 'admin', 'help'].includes(st.screen) && <TabBar screen={st.screen} admin={st.role === 'admin'} go={(x) => go(x)} onMe={signOut} />}
+      <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
     </div>
   );
 }
@@ -387,16 +475,40 @@ function secDone(v: Vals, id: string) {
   return Object.keys(v).some((k) => k.startsWith(id + '.') && v[k] && !(Array.isArray(v[k]) && !v[k].length) && !(id === 's1' && ['s1.name','s1.address','s1.city','s1.state','s1.zip','s1.phone'].includes(k)));
 }
 
-function Page({ title, sub, back, right, children }: { title: string; sub?: string; back?: () => void; right?: React.ReactNode; children: React.ReactNode }) {
+function Page({ title, sub, back, backLabel, right, kicker, segs, light, children }: { title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
+  const head = (
+    <>
+      {kicker && <div className="kicker">{kicker}</div>}
+      <h1>{title}</h1>
+      {sub && <div className="sub">{sub}</div>}
+    </>
+  );
   return (
     <main>
-      <header>
-        {back && <button className="link" onClick={back}>‹ Back</button>}
-        <div className="between"><h1>{title}</h1>{right}</div>
-        {sub && <div className="muted">{sub}</div>}
+      <header className="dark">
+        <div className="hbar">
+          {back ? <button className="backbtn" onClick={back}><ChevronLeft size={20} strokeWidth={2.5} />{backLabel || 'Back'}</button> : <span />}
+          <span className="hright">{right}</span>
+        </div>
+        {segs && <div className="segs">{Array.from({ length: segs.n }, (_, k) => <i key={k} className={k < segs.i ? 'done' : k === segs.i ? 'cur' : ''} />)}</div>}
+        {!light && <div className="hero">{head}</div>}
       </header>
+      {light && <div className="lighthero">{head}</div>}
       <div className="body">{children}</div>
     </main>
+  );
+}
+
+function TabBar({ screen, admin, go, onMe }: { screen: string; admin: boolean; go: (s: Screen) => void; onMe: () => void }) {
+  const tabs = [
+    { k: admin ? 'admin' : 'jobs', l: admin ? 'Home' : 'Jobs', I: House, on: () => go(admin ? 'admin' : 'jobs') },
+    { k: 'help', l: 'Help', I: CircleHelp, on: () => go('help') },
+    { k: 'me', l: 'Sign out', I: User, on: onMe },
+  ];
+  return (
+    <nav className="tabbar">
+      {tabs.map(({ k, l, I, on }) => <button key={k} className={screen === k ? 'on' : ''} onClick={on}><I size={22} strokeWidth={2} />{l}</button>)}
+    </nav>
   );
 }
 
@@ -404,19 +516,23 @@ function Login({ onLogin, onAuth }: { onLogin: (u: string, role: 'tech' | 'plumb
   const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
   return (
-    <main className="login">
-      <h1 className="brand">Soft Water Specialists</h1>
-      <p className="muted">We diagnose. We solve. We protect what matters.</p>
-      <input className="in" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" />
-      <input className="in" placeholder="Password" type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
-      {msg && <div className="err">{msg}</div>}
-      <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>Sign in</button>
-      <button className="btn ghost" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create account</button>
-      <div className="or">demo (not saved to the cloud)</div>
-      <div className="actions">
-        <button className="link" onClick={() => onLogin('Dana Ruiz', 'tech')}>Technician</button>
-        <button className="link" onClick={() => onLogin('Ortiz Plumbing & Heating', 'plumber')}>Partner</button>
-        <button className="link" onClick={() => onLogin('Matt Mahany', 'admin')}>Admin</button>
+    <main className="loginwrap">
+      <header className="dark loginhero">
+        <h1>We diagnose. We solve. We protect what matters.</h1>
+        <div className="sub">Sign in to your water evaluations</div>
+      </header>
+      <div className="body">
+        <div className="field"><label className="lbl">Email</label><input className="in" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
+        <div className="field"><label className="lbl">Password</label><input className="in" type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></div>
+        {msg && <div className="err">{msg}</div>}
+        <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>Sign in</button>
+        <button className="btn ghost" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create account</button>
+        <div className="kicker demo">Demo (not saved to the cloud)</div>
+        <div className="pills">
+          <button onClick={() => onLogin('Dana Ruiz', 'tech')}>Technician</button>
+          <button onClick={() => onLogin('Ortiz Plumbing & Heating', 'plumber')}>Partner</button>
+          <button onClick={() => onLogin('Matt Mahany', 'admin')}>Admin</button>
+        </div>
       </div>
     </main>
   );
@@ -436,7 +552,12 @@ function FieldView({ sid, f, v, set }: { sid: string; f: Field; v: Vals; set: (k
   const k = `${sid}.${f.id}`, val = v[k];
   const wrap = (c: React.ReactNode) => <div className={'field ' + (f.half ? 'half' : '')}><label className="lbl">{f.label}</label>{c}</div>;
   switch (f.t) {
-    case 'text': return wrap(<input className="in" inputMode={f.im as any} value={val || ''} onChange={(e) => set(k, e.target.value)} />);
+    case 'text': {
+      const m = f.label.match(/^(.*) \(([A-Za-z]+)\)$/);
+      const input = <input className="in" inputMode={f.im as any} value={val || ''} onChange={(e) => set(k, e.target.value)} />;
+      if (!m) return wrap(input);
+      return <div className={'field ' + (f.half ? 'half' : '')}><label className="lbl">{m[1]}</label><div className="unit">{input}<span>{m[2]}</span></div></div>;
+    }
     case 'date': return wrap(<input className="in" type="date" value={val || ''} onChange={(e) => set(k, e.target.value)} />);
     case 'area': return wrap(<textarea className="in" rows={3} value={val || ''} onChange={(e) => set(k, e.target.value)} />);
     case 'single':
