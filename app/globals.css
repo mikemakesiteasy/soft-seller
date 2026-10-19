@@ -198,3 +198,5 @@ h1.big{background:linear-gradient(180deg,#fff,#cfe0f7);-webkit-background-clip:t
 .herotext{font-size:24px;font-weight:800;letter-spacing:-.01em}
 .co{cursor:pointer;text-align:left;background:var(--bg)}
 .colorin{padding:4px;height:48px;cursor:pointer}
+.homebtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;margin-left:4px}.homebtn:hover{background:rgba(255,255,255,.22)}
+.homebtn{width:auto;gap:6px;padding:0 14px;font-weight:800;font-size:14px}

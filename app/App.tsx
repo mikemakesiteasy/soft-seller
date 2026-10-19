@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
@@ -13,6 +13,15 @@ type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Recor
 type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
+const ADMIN_SUB = ['catalog', 'kits', 'packing', 'porders', 'inbox', 'messages', 'setup', 'team', 'brand', 'platform', 'companies'];
+const TAB_SCREENS = ['jobs', 'admin', 'help', 'switch', ...ADMIN_SUB];
+const HomeCtx = createContext<(() => void) | null>(null);
+const hashOf = (screen: string, jobId?: string, sec?: number) => `#/${screen}${jobId && !['login', 'pending', 'jobs', 'admin', 'help', 'switch', ...ADMIN_SUB].includes(screen) ? '/' + jobId : ''}${screen === 'section' ? '/' + (sec ?? 0) : ''}`;
+const parseHash = (h: string): { screen: Screen; jobId?: string; sec?: number } | null => {
+  const m = /^#\/([a-z]+)(?:\/([^/]+))?(?:\/(\d+))?$/.exec(h || '');
+  if (!m) return null;
+  return { screen: m[1] as Screen, jobId: m[2], sec: m[3] ? Number(m[3]) : undefined };
+};
 const GROUPS = ['Assess', 'Inspect', 'Plan', 'Close'];
 const GROUP_OF: Record<string, string> = { s1: 'Assess', sB: 'Assess', s2: 'Assess', s3: 'Assess', s4: 'Assess', s5: 'Assess', s6: 'Inspect', s7: 'Inspect', s8: 'Inspect', s9: 'Plan', s10: 'Plan', s14: 'Close', s16: 'Close' };
 const shade = (hex: string, f: number) => {
@@ -120,6 +129,26 @@ export default function App() {
     }, 1000);
     return () => clearTimeout(t);
   }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.brand, st.uid, st.companyId, st.role]);
+  const stRef = useRef(st);
+  stRef.current = st;
+  useEffect(() => {
+    if (!ready) return;
+    const h = hashOf(st.screen, st.jobId, st.sec);
+    if (window.location.hash !== h) { try { window.history.pushState(null, '', h); } catch {} }
+  }, [ready, st.screen, st.jobId, st.sec]);
+  useEffect(() => {
+    const onPop = () => {
+      const t = parseHash(window.location.hash), cur = stRef.current;
+      if (!t) return;
+      const signedIn = !!(cur.uid || cur.role);
+      if ((t.screen === 'login' || t.screen === 'pending') && signedIn) { window.history.pushState(null, '', hashOf(cur.screen, cur.jobId, cur.sec)); return; }
+      if (!signedIn && t.screen !== 'login') return;
+      setSt((x) => ({ ...x, screen: t.screen, jobId: t.jobId ?? x.jobId, sec: t.sec ?? x.sec }));
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   useEffect(() => {
     const b = st.uid ? st.brand : loginBrand || plat;
     applyTheme((b as any)?.color || (st.uid ? undefined : plat.color), (b as any)?.dark || (st.uid ? undefined : plat.dark));
@@ -136,6 +165,8 @@ export default function App() {
   const disc = st.disc ?? 40;
   const isPartner = st.role === 'plumber';
 
+  const home = () => go(st.role === 'admin' ? 'admin' : 'jobs');
+  const showTabs = TAB_SCREENS.includes(st.screen);
   const go = (screen: Screen, extra: Partial<State> = {}) => { setSt((s) => ({ ...s, screen, ...extra })); window.scrollTo(0, 0); };
   const metaOf = (id: string): Meta | undefined => st.jobs[id]?.meta || JOBS.find((j) => j.id === id);
   const ownJobs = Object.entries(st.jobs).map(([id, d]) => d.meta || JOBS.find((j) => j.id === id)).filter((m): m is Meta => !!m);
@@ -147,7 +178,8 @@ export default function App() {
   const flowSecs = jd ? (jd.flow === 'quick' ? SECS.filter((s) => QUICK.includes(s.id)) : SECS) : SECS;
 
   return (
-    <div className={'shell ' + (['jobs', 'admin', 'help', 'switch'].includes(st.screen) ? 'withtabs' : '')}>
+    <HomeCtx.Provider value={home}>
+    <div className={'shell ' + (showTabs ? 'withtabs' : '')}>
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
       {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
@@ -488,32 +520,33 @@ export default function App() {
         </Page>
       )}
       {st.screen === 'switch' && (
-        <Page title="View as" kicker="Developer" sub="See the app the way each role does. Your account stays the same.">
-          {([['Technician', 'tech', 'jobs'], ['Plumbing partner', 'plumber', 'jobs'], ['Admin', 'admin', 'admin']] as ['' | string, 'tech' | 'plumber' | 'admin', Screen][]).map(([l, r, to]) => (
-            <button key={l} className={'row ' + (st.role === r ? 'cur' : '')} onClick={() => go(to, { role: r })}><span className="grow">{l}</span>{st.role === r && <span className="donetag"><Check size={16} />Current</span>}<ChevronRight size={18} /></button>
-          ))}
+        <Page root title="Switch" kicker={st.dev ? 'Developer' : 'Your companies'} sub={st.dev ? 'Change company, or see the app the way each role does.' : 'Change which company you are working in.'}>
+          {(st.companies || []).length > 1 && <h3>Company</h3>}
+          {(st.companies || []).length > 1 && (
+            <div className="group" style={{ margin: '0 -20px' }}>
+              {(st.companies || []).map((c) => (
+                <button key={c.id} className="row" onClick={() => c.id !== st.companyId && switchCompany(c.id)}><span className="grow">{c.name}</span>{c.id === st.companyId && <span className="donetag"><Check size={16} />Current</span>}<ChevronRight size={18} /></button>
+              ))}
+            </div>
+          )}
+          {st.dev && <h3>View as</h3>}
+          {st.dev && (
+            <div className="group" style={{ margin: '0 -20px' }}>
+              {([['Technician', 'tech', 'jobs'], ['Plumbing partner', 'plumber', 'jobs'], ['Admin', 'admin', 'admin']] as [string, 'tech' | 'plumber' | 'admin', Screen][]).map(([l, r, to]) => (
+                <button key={l} className="row" onClick={() => go(to, { role: r })}><span className="grow">{l}</span>{st.role === r && <span className="donetag"><Check size={16} />Current</span>}<ChevronRight size={18} /></button>
+              ))}
+            </div>
+          )}
         </Page>
-      )}
-      {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
-      {st.screen === 'platform' && st.dev && (
-        <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
-      )}
-      {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} back={() => go('admin')} />}
-      {st.screen === 'brand' && st.companyId && st.dev && (
-        <BrandScreen name={coName} brand={st.brand || {}} back={() => go('admin')}
-          onSave={async (name, b) => { await supabase.from('companies').update({ name }).eq('id', st.companyId!); setSt((x) => ({ ...x, companyName: name, brand: b, companies: (x.companies || []).map((c) => (c.id === x.companyId ? { ...c, name } : c)) })); }} />
-      )}
-      {st.screen === 'companies' && (
-        <CompaniesScreen list={st.companies || []} active={st.companyId} back={() => go('admin')} onEnter={switchCompany}
-          onCreate={async (name, slug) => { const { error } = await supabase.rpc('create_company', { p_name: name, p_slug: slug }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
       )}
       {st.screen === 'pending' && (
         <PendingScreen user={st.user || ''} err={(st as any).inviteErr} dev={!!st.dev} onSignOut={signOut}
           onRedeem={async (code) => { const { error } = await supabase.rpc('redeem_invite', { p_code: code }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
       )}
-      {['jobs', 'admin', 'help', 'switch'].includes(st.screen) && <TabBar screen={st.screen} admin={st.role === 'admin'} dev={st.dev} go={(x) => go(x)} onMe={signOut} />}
+      {showTabs && <TabBar screen={st.screen} admin={st.role === 'admin'} canSwitch={!!st.dev || (st.companies || []).length > 1} go={(x) => go(x)} onMe={signOut} />}
       <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
     </div>
+    </HomeCtx.Provider>
   );
 }
 
@@ -524,7 +557,7 @@ const TOPICS: [string, string][] = [['Install, plumbing or water question', 'Mat
 function HelpScreen({ role, user, back, onSend }: { role?: string; user: string; back: () => void; onSend: (t: { topic: string; to: string; text: string; urgent: boolean }) => void }) {
   const [topic, setTopic] = useState(0), [text, setText] = useState(''), [urgent, setUrgent] = useState(false), [sent, setSent] = useState(false);
   return (
-    <Page title="Help and support" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
+    <Page root title="Help and support" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
       <div className="pills">{TOPICS.map(([t], i) => <button key={t} className={topic === i ? 'on' : ''} onClick={() => setTopic(i)}>{t}</button>)}</div>
       <div className="muted">Goes to: {TOPICS[topic][1]}</div>
       <textarea className="in" rows={4} placeholder="What do you need help with?" value={text} onChange={(e) => setText(e.target.value)} />
@@ -727,7 +760,8 @@ function PendingScreen({ user, err, dev, onRedeem, onSignOut }: { user: string; 
   );
 }
 
-function Page({ title, sub, back, backLabel, right, kicker, segs, light, children }: { title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
+function Page({ title, sub, back, backLabel, right, kicker, segs, light, root, children }: { root?: boolean; title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
+  const goHome = useContext(HomeCtx);
   const head = (
     <>
       {kicker && <div className="kicker">{kicker}</div>}
@@ -740,7 +774,7 @@ function Page({ title, sub, back, backLabel, right, kicker, segs, light, childre
       <header className="dark">
         <div className="hbar">
           {back ? <button className="backbtn" onClick={back}><ChevronLeft size={20} strokeWidth={2.5} />{backLabel || 'Back'}</button> : <span />}
-          <span className="hright">{right}</span>
+          <span className="hright">{right}{goHome && !root && <button className="homebtn" onClick={goHome}><House size={18} />Home</button>}</span>
         </div>
         {segs && <div className="segs">{Array.from({ length: segs.n }, (_, k) => <i key={k} className={k < segs.i ? 'done' : k === segs.i ? 'cur' : ''} />)}</div>}
         {!light && <div className="hero">{head}</div>}
@@ -751,16 +785,17 @@ function Page({ title, sub, back, backLabel, right, kicker, segs, light, childre
   );
 }
 
-function TabBar({ screen, admin, dev, go, onMe }: { screen: string; admin: boolean; dev?: boolean; go: (s: Screen) => void; onMe: () => void }) {
+function TabBar({ screen, admin, canSwitch, go, onMe }: { screen: string; admin: boolean; canSwitch: boolean; go: (s: Screen) => void; onMe: () => void }) {
+  const homeKey = admin ? 'admin' : 'jobs', active = ADMIN_SUB.includes(screen) ? 'admin' : screen;
   const tabs = [
-    { k: admin ? 'admin' : 'jobs', l: admin ? 'Home' : 'Jobs', I: House, on: () => go(admin ? 'admin' : 'jobs') },
+    { k: homeKey, l: admin ? 'Home' : 'Jobs', I: House, on: () => go(homeKey as Screen) },
     { k: 'help', l: 'Help', I: CircleHelp, on: () => go('help') },
-    ...(dev ? [{ k: 'switch', l: 'Switch', I: Repeat, on: () => go('switch') }] : []),
+    ...(canSwitch ? [{ k: 'switch', l: 'Switch', I: Repeat, on: () => go('switch') }] : []),
     { k: 'me', l: 'Sign out', I: User, on: onMe },
   ];
   return (
     <nav className="tabbar">
-      {tabs.map(({ k, l, I, on }) => <button key={k} className={screen === k ? 'on' : ''} onClick={on}><I size={22} strokeWidth={2} />{l}</button>)}
+      {tabs.map(({ k, l, I, on }) => <button key={k} className={active === k ? 'on' : ''} onClick={on}><I size={22} strokeWidth={2} />{l}</button>)}
     </nav>
   );
 }
