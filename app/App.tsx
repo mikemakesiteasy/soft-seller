@@ -119,7 +119,7 @@ export default function App() {
 
   const go = (screen: Screen, extra: Partial<State> = {}) => { setSt((s) => ({ ...s, screen, ...extra })); window.scrollTo(0, 0); };
   const metaOf = (id: string): Meta | undefined => st.jobs[id]?.meta || JOBS.find((j) => j.id === id);
-  const ownJobs = Object.values(st.jobs).map((d) => d.meta).filter((m): m is Meta => !!m);
+  const ownJobs = Object.entries(st.jobs).map(([id, d]) => d.meta || JOBS.find((j) => j.id === id)).filter((m): m is Meta => !!m);
   const jobList: Meta[] = st.uid ? ownJobs : [...JOBS, ...ownJobs.filter((m) => !JOBS.some((j) => j.id === m.id))];
   const job = st.jobId ? metaOf(st.jobId) : undefined;
   const jd = job ? st.jobs[job.id] || blank(job) : undefined;
