@@ -383,9 +383,8 @@ export default function App() {
               ['Kits & rules', `${RULES.length} rules`, 'kits', Wrench],
               ['Messages', 'Push · Text · Email', 'messages', MessageSquare],
               ['Team', 'Members and invites', 'team', Users],
-              ['Company & brand', 'Name, logo, contact', 'brand', Palette],
               ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
-              ...(st.dev ? [['Platform brand', 'App name, logo, colors', 'platform', Palette]] : []),
+              ...(st.dev ? [['Platform brand', 'App name, logo, colors', 'platform', Palette], ['Company brand', 'Name, logo, colors, contact', 'brand', Palette]] : []),
               ...(st.dev ? [['All companies', `${(st.companies || []).length} on the platform`, 'companies', Building2]] : []),
             ] as [string, string, Screen, any][]).map(([t, sub, to, Ic]) => (
               <button key={t} className="tile" onClick={() => go(to)}><span className="ico"><Ic size={22} /></span><b>{t}</b><span className="muted">{sub}</span></button>
@@ -496,11 +495,11 @@ export default function App() {
         </Page>
       )}
       {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
-      {st.screen === 'platform' && (
+      {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
       {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} back={() => go('admin')} />}
-      {st.screen === 'brand' && st.companyId && (
+      {st.screen === 'brand' && st.companyId && st.dev && (
         <BrandScreen name={coName} brand={st.brand || {}} back={() => go('admin')}
           onSave={async (name, b) => { await supabase.from('companies').update({ name }).eq('id', st.companyId!); setSt((x) => ({ ...x, companyName: name, brand: b, companies: (x.companies || []).map((c) => (c.id === x.companyId ? { ...c, name } : c)) })); }} />
       )}
