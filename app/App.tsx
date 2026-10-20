@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { Sig } from './sig';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
 type Screen = 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
@@ -9,7 +10,7 @@ type Meta = { id: string; name: string; address: string; city: string; state: st
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
-type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
+type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
 type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
@@ -37,6 +38,12 @@ const applyTheme = (color?: string, dark?: string) => {
   r.setProperty('--accent', a); r.setProperty('--a600', shade(a, 0.9)); r.setProperty('--a700', shade(a, 0.75));
   r.setProperty('--navy9', d); r.setProperty('--navy8', shade(d, 1.22));
 };
+const CONSENT = 'I agree to sign this proposal electronically. My typed name and drawn signature are my legal signature.';
+const snapshotOf = (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, co: { name: string; phone?: string; web?: string }) => ({
+  appUrl: appUrl(), option: t.name, sub: t.sub, total: t.total, monthly: monthly(t.total), deposit: dep,
+  items: [...t.skus.map((x) => ({ name: CAT[x].name })), { name: 'Installation (materials and labor)' }],
+  tiers: all.map((x) => ({ name: x.name, sub: x.sub, total: x.total, monthly: monthly(x.total) })), company: co,
+});
 const DEFAULT_KITS = JSON.parse(JSON.stringify(KITS)) as typeof KITS;
 const DEFAULT_RULES = RULES.map((r) => ({ ...r }));
 const DEFAULT_CAT = JSON.parse(JSON.stringify(CAT)) as typeof CAT;
@@ -49,6 +56,7 @@ export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
   const stRef = useRef<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
+  const [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   stRef.current = st;
   const remoteSettings = useRef<Record<string, any>>({});
   const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
@@ -148,10 +156,12 @@ export default function App() {
     const t = setTimeout(() => {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
-      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed }).filter(([, v]) => v !== undefined)) };
-      if (JSON.stringify(next) !== JSON.stringify(remoteSettings.current)) {
-        remoteSettings.current = next;
-        supabase.from('companies').update({ settings: next }).eq('id', st.companyId!).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
+      // save only the settings that really changed, so a stale copy on this phone can never erase anything else
+      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed } as Record<string, any>;
+      const changed = Object.fromEntries(Object.entries(mine).filter(([k, v]) => v !== undefined && JSON.stringify(v) !== JSON.stringify(remoteSettings.current[k])));
+      if (Object.keys(changed).length) {
+        remoteSettings.current = { ...remoteSettings.current, ...changed };
+        supabase.rpc('merge_company_settings', { p_patch: changed }).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
       }
     }, 1000);
     return () => clearTimeout(t);
@@ -174,6 +184,24 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+  useEffect(() => {
+    if (!st.uid || !st.online) return;
+    Object.entries(st.jobs).forEach(async ([id, d]) => {
+      if (!d.pendingSign || !d.choice) return;
+      try {
+        const all = tiers(d.values), t = all.find((x) => x.name === d.choice) || all[1], dep = Math.round(t.total * 0.1);
+        let token = d.proposalToken;
+        if (!token) {
+          const { data, error } = await supabase.rpc('create_proposal', { p_job_id: id, p_name: String(d.values['s1.name'] || ''), p_email: String(d.values['s1.email'] || ''), p_phone: String(d.values['s1.phone'] || ''), p_snapshot: snapshotOf(t, all, dep, { name: st.companyName || '', phone: st.brand?.phone, web: st.brand?.web }) });
+          if (error) return; token = data as string;
+        }
+        const { error } = await supabase.rpc('sign_proposal', { p_token: token, p_name: d.pendingSign.name, p_signature: d.pendingSign.signature, p_consent: d.pendingSign.consent, p_agent: navigator.userAgent });
+        if (error && !/already been signed/.test(error.message)) return;
+        supabase.functions.invoke('proposal-email', { body: { action: 'signed', token } });
+        setSt((x) => ({ ...x, jobs: { ...x.jobs, [id]: { ...x.jobs[id], proposalToken: token, pendingSign: undefined } } }));
+      } catch {}
+    });
+  }, [st.uid, st.online, st.jobs]); // eslint-disable-line
   useEffect(() => {
     const b = st.uid ? st.brand : loginBrand || plat;
     applyTheme((b as any)?.color || (st.uid ? undefined : plat.color), (b as any)?.dark || (st.uid ? undefined : plat.dark));
@@ -203,6 +231,50 @@ export default function App() {
   const setVal = (k: string, val: any) => job && jd && setSt((s) => { const cur = s.jobs[job.id] || jd; return { ...s, jobs: { ...s.jobs, [job.id]: { ...cur, values: { ...cur.values, [k]: val } } } }; });
   const flowSecs = jd ? (jd.flow === 'quick' ? SECS.filter((s) => QUICK.includes(s.id)) : SECS) : SECS;
 
+  // make (or reuse) the saved proposal for this job
+  const ensureProposal = async (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, email: string, phone: string) => {
+    if (!job || !jd) throw new Error('No job open');
+    if (jd.proposalToken && jd.choice === t.name) return jd.proposalToken;
+    const { data, error } = await supabase.rpc('create_proposal', { p_job_id: job.id, p_name: String(jd.values['s1.name'] || job.name), p_email: email, p_phone: phone, p_snapshot: snapshotOf(t, all, dep, { name: coName, phone: st.brand?.phone, web: st.brand?.web }) });
+    if (error) throw new Error(error.message);
+    patch({ proposalToken: data, choice: t.name });
+    return data as string;
+  };
+  const callEmail = async (action: 'link' | 'signed', token: string) => {
+    const { data, error } = await supabase.functions.invoke('proposal-email', { body: { action, token } });
+    if (error) return 'The email could not be sent right now.';
+    if (data?.error === 'email_not_set_up') return 'Email sending is not set up for this company yet. Ask the owner to add it under Connected apps. You can still text or email the link yourself.';
+    if (data?.error === 'no_customer_email') return 'Add the customer email first.';
+    if (data?.error) return 'The email could not be sent: ' + (data.message || data.error);
+    return '';
+  };
+  const sendForLater = async (t: any, all: any, dep: number, email: string, phone: string) => {
+    setMsg(''); setBusy(true);
+    try {
+      const token = await ensureProposal(t, all, dep, email, phone);
+      const problem = await callEmail('link', token);
+      setMsg(problem || '✓ Sent. They can read it and sign whenever they are ready.');
+    } catch (e) { setMsg((e as Error).message); }
+    setBusy(false);
+  };
+  const finishSigning = async (t: any, all: any, dep: number, email: string, phone: string) => {
+    if (!job || !jd) return;
+    setMsg(''); setBusy(true);
+    const sign = { name: String(jd.values['s14.printed']).trim(), signature: String(jd.values['s14.sig']), consent: CONSENT };
+    try {
+      if (!st.uid) throw new Error('offline-or-guest');
+      const token = await ensureProposal(t, all, dep, email, phone);
+      const { error } = await supabase.rpc('sign_proposal', { p_token: token, p_name: sign.name, p_signature: sign.signature, p_consent: sign.consent, p_agent: navigator.userAgent });
+      if (error && !/already been signed/.test(error.message)) throw new Error(error.message);
+      patch({ pendingSign: undefined });
+      callEmail('signed', token);
+    } catch (e) {
+      // no signal (or a guest): keep the signature on this phone and finish it when back online
+      patch({ pendingSign: sign });
+    }
+    setBusy(false);
+    go('materials');
+  };
   return (
     <HomeCtx.Provider value={home}>
     <div className={'shell ' + (showTabs ? 'withtabs' : '')}>
@@ -339,34 +411,33 @@ export default function App() {
         );
       })()}
       {st.screen === 'proposal' && job && jd && (() => {
-        const t = tiers(jd.values).find((x) => x.name === jd.choice) || tiers(jd.values)[1];
+        const all = tiers(jd.values), t = all.find((x) => x.name === jd.choice) || all[1];
         const dep = Math.round(t.total * 0.1);
+        const email = String(jd.values['s1.email'] || ''), phone = String(jd.values['s1.phone'] || job.phone || '').replace(/[^0-9+]/g, '');
+        const consent = !!jd.values['s14.consent'], named = String(jd.values['s14.printed'] || '').trim().length > 1;
+        const canSign = !!jd.values['s14.sig'] && named && consent;
+        const signedIn = !!st.uid;
+        const link = jd.proposalToken ? `${appUrl()}/p/${jd.proposalToken}` : '';
         return (
           <Page title={`${t.name} option`} kicker={`Proposal · ${job.name}`} sub={t.sub} back={() => go('present')} backLabel="Options">
             {!st.pricesConfirmed && <div className="warn">Estimated prices. The owner has not confirmed the price list yet, so do not quote these to a real customer.</div>}
             <div className="plist">
-              {t.skus.map((x) => <div key={x}>{CAT[x].name}</div>)}<div>Installation materials</div>
+              {t.skus.map((x) => <div key={x}>{CAT[x].name}</div>)}<div>Installation (materials and labor)</div>
               <div className="between"><span>Investment</span><b>{money(t.total)}</b></div>
               <div className="between"><span>Or financed</span><b>{money(monthly(t.total))}/mo</b></div>
               <div className="between"><span>Deposit (10%, placeholder)</span><b>{money(dep)}</b></div>
             </div>
-            <FieldView sid="s14" f={SECS.find((s) => s.id === 's14')!.fields[0]} v={jd.values} set={setVal} />
-            <FieldView sid="s14" f={SECS.find((s) => s.id === 's14')!.fields[1]} v={jd.values} set={setVal} />
+            <div className="field"><label className="lbl">Customer email (so their copy can be sent)</label><input className="in" type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setVal('s1.email', e.target.value)} placeholder="name@example.com" /></div>
+            <h3>If they are ready to sign</h3>
+            <div className="field"><label className="lbl">Printed name</label><input className="in" value={String(jd.values['s14.printed'] || '')} onChange={(e) => setVal('s14.printed', e.target.value)} /></div>
+            <FieldView sid="s14" f={SECS.find((x) => x.id === 's14')!.fields[0]} v={jd.values} set={setVal} />
+            <label className="check"><input type="checkbox" checked={consent} onChange={(e) => setVal('s14.consent', e.target.checked)} />{CONSENT}</label>
             <label className="check"><input type="checkbox" checked={!!jd.deposit} onChange={(e) => patch({ deposit: e.target.checked })} />Card deposit collected (payment provider not connected yet)</label>
+            {msg && <div className={msg.startsWith('✓') ? 'okmsg' : 'err'}>{msg}</div>}
+            {link && <ShareLink url={link} company={coName} label="Proposal link for the customer" />}
             <div className="actions">
-              {(() => {
-                const phone = String(jd.values['s1.phone'] || job.phone || '').replace(/[^0-9+]/g, ''), email = String(jd.values['s1.email'] || '');
-                const ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
-                const body = `${coName}: your ${t.name} water plan\n` + t.skus.map((x) => '• ' + CAT[x].name).join('\n') + `\n• Installation\nInvestment: ${money(t.total)} (or ${money(monthly(t.total))}/mo)\nDeposit: ${money(dep)}\nQuestions? ${st.brand?.phone || ''}`;
-                return (
-                  <div className="btnrow wrap">
-                    <a className="btn ghost sm" onClick={() => patch({ sent: true })} href={`sms:${phone}${ios ? '&' : '?'}body=${encodeURIComponent(body)}`}>Text it to the customer</a>
-                    <a className="btn ghost sm" onClick={() => patch({ sent: true })} href={`mailto:${email}?subject=${encodeURIComponent(coName + ': your water plan')}&body=${encodeURIComponent(body)}`}>Email it</a>
-                    {jd.sent && <span className="muted">Message opened ✓</span>}
-                  </div>
-                );
-              })()}
-              <button className="btn" disabled={!jd.values['s14.sig']} onClick={() => go('materials')}>Approve & continue</button>
+              <button className="btn" disabled={!canSign || busy} onClick={() => finishSigning(t, all, dep, email, phone)}>{busy ? 'Saving…' : 'Customer signs now'}</button>
+              <button className="btn ghost" disabled={busy || !signedIn} onClick={() => sendForLater(t, all, dep, email, phone)}>{signedIn ? 'Not ready yet? Email them the proposal' : 'Sign in to email proposals'}</button>
             </div>
           </Page>
         );
@@ -912,6 +983,7 @@ function LocationsScreen({ back }: { back: () => void }) {
 }
 
 const PROVIDERS: { k: string; name: string; what: string; how: string }[] = [
+  { k: 'resend', name: 'Email sending (Resend)', what: 'Sends proposals and signed copies to customers', how: 'Create a free account at resend.com, add your company web address there, and make an API key. Put the sender in the first box exactly like: Soft Water Specialists <quotes@yourcompany.com>. Put the API key in the second box.' },
   { k: 'housecall_pro', name: 'Housecall Pro', what: 'Jobs and scheduling', how: 'In Housecall Pro, create an API key (it needs a plan that includes API access) and paste it here.' },
   { k: 'angi', name: 'Angi (Angie\'s List)', what: 'Leads and appointments', how: 'Angi shares leads through its partner program. Paste your partner API key if Angi has given you one.' },
   { k: 'thumbtack', name: 'Thumbtack', what: 'Leads', how: 'Paste your Thumbtack partner API token if you have one.' },
@@ -1122,26 +1194,6 @@ function PhotoField({ k, v, set, label }: { k: string; v: Vals; set: (k: string,
       {v[k] && <img className="thumb" src={v[k]} alt="" />}
       <label className="btn ghost filebtn">{v[k] ? 'Retake photo' : 'Take photo'}<input type="file" accept="image/*" capture="environment" hidden onChange={(e) => onFile(e.target.files?.[0])} /></label>
       <label className="check"><input type="checkbox" checked={!!v[k + 'Later']} onChange={(e) => set(k + 'Later', e.target.checked)} />Taken on phone camera, attach later</label>
-    </div>
-  );
-}
-
-function Sig({ value, onChange }: { value?: string; onChange: (d: string) => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
-  useEffect(() => {
-    const c = ref.current!, x = c.getContext('2d')!;
-    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
-    if (value) { const i = new Image(); i.onload = () => x.drawImage(i, 0, 0); i.src = value; }
-  }, []); // eslint-disable-line
-  const pos = (e: React.PointerEvent) => { const r = ref.current!.getBoundingClientRect(); return [(e.clientX - r.left) * (ref.current!.width / r.width), (e.clientY - r.top) * (ref.current!.height / r.height)]; };
-  return (
-    <div>
-      <canvas ref={ref} width={600} height={200} className="sig" style={{ touchAction: 'none' }}
-        onPointerDown={(e) => { drawing.current = true; const x = ref.current!.getContext('2d')!; const [px, py] = pos(e); x.beginPath(); x.moveTo(px, py); }}
-        onPointerMove={(e) => { if (!drawing.current) return; const x = ref.current!.getContext('2d')!; const [px, py] = pos(e); x.lineWidth = 3; x.strokeStyle = '#0d2550'; x.lineTo(px, py); x.stroke(); }}
-        onPointerUp={() => { drawing.current = false; onChange(ref.current!.toDataURL()); }} />
-      <button className="link" onClick={() => { const c = ref.current!; c.getContext('2d')!.fillStyle = '#fff'; c.getContext('2d')!.fillRect(0, 0, c.width, c.height); onChange(''); }}>Clear</button>
     </div>
   );
 }

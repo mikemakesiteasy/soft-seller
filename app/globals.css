@@ -228,3 +228,13 @@ button,a,label,input,select,textarea{touch-action:manipulation}
   .btn:not(.ghost):not(.sm):hover::after{transform:none}
 }
 .warn{background:#fff4d6;color:#7a5a00;padding:10px 12px;font-weight:600;font-size:14px}
+
+/* ---- customer proposal page ---- */
+.pub{max-width:640px;margin:0 auto;min-height:100vh;background:var(--bg)}
+.pubhead{background:var(--navy9);color:#fff;padding:22px 20px 24px}
+.pubhead h1{font-size:34px}
+.publogo{max-height:52px;max-width:240px;width:auto}
+.pubname{font-size:22px;font-weight:800}
+.pubbody{padding:16px 20px 40px;display:flex;flex-direction:column;gap:14px}
+.pubsig{background:#fff;border:1px solid var(--n400);max-width:100%;height:auto}
+@media print{.btn,.setupbar,.tabbar{display:none!important}.pubhead{background:#fff;color:#000}}

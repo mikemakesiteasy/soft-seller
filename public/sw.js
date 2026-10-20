@@ -20,8 +20,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('/', copy));
+          if (url.pathname === '/') { const copy = res.clone(); caches.open(CACHE).then((c) => c.put('/', copy)); }
           return res;
         })
         .catch(() => caches.match('/').then((r) => r || new Response('You are offline. Open the app again when you have signal.', { status: 503 })))
