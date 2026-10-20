@@ -687,16 +687,20 @@ function NewJob({ back, onCreate }: { back: () => void; onCreate: (m: Meta) => v
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', tech: 'Technician', plumber: 'Plumbing partner', dealer: 'Authorized dealer', diy: 'DIY homeowner', franchisor: 'Franchise HQ' };
 
 function ShareLink({ url, company, label }: { url: string; company: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false), [phone, setPhone] = useState('');
+  const digits = phone.replace(/[^0-9+]/g, '');
+  const ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const smsHref = `sms:${digits}${ios ? '&' : '?'}body=${encodeURIComponent(`You're invited to join ${company}. Tap this link to get started: ${url}`)}`;
   const msg = `You're invited to join ${company}. Tap this link to get started: ${url}`;
   const canShare = typeof navigator !== 'undefined' && !!(navigator as any).share;
   return (
     <div className="card">
       <b>{label || 'Invite link ready'}</b>
       <div className="muted" style={{ wordBreak: 'break-all' }}>{url}</div>
+      <input className="in" type="tel" inputMode="tel" placeholder="Their mobile number (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <div className="btnrow wrap">
         {canShare && <button className="btn sm" onClick={() => (navigator as any).share({ title: company, text: msg, url }).catch(() => {})}>Share</button>}
-        <a className="btn ghost sm" href={`sms:?&body=${encodeURIComponent(msg)}`}>Text it</a>
+        <a className="btn ghost sm" href={smsHref}>Text it</a>
         <a className="btn ghost sm" href={`mailto:?subject=${encodeURIComponent('Your invite to ' + company)}&body=${encodeURIComponent(msg)}`}>Email it</a>
         <button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); }}>{copied ? 'Copied ✓' : 'Copy'}</button>
       </div>
@@ -706,7 +710,7 @@ function ShareLink({ url, company, label }: { url: string; company: string; labe
 
 function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; companies: Co[]; isDev: boolean; back: () => void }) {
   const [members, setMembers] = useState<{ user_id: string; role: string; name: string }[]>([]);
-  const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean; company_id: string | null }[]>([]);
+  const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean; company_id: string | null; extra_companies?: string[] }[]>([]);
   const roles: [string, string][] = [['admin', 'Admin / owner'], ['tech', 'Technician (employee)'], ['plumber', 'Plumbing partner'], ['dealer', 'Authorized dealer']].filter(([k]) => !(isDev && (k === 'tech' || k === 'plumber'))) as [string, string][];
   const mine = companies.filter((c) => isDev || c.role === 'admin');
   const [working, setWorking] = useState(false);
@@ -717,7 +721,7 @@ function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; 
     const { data: pr } = ids.length ? await supabase.from('profiles').select('user_id,display_name,email').in('user_id', ids) : { data: [] as any[] };
     const nm: Record<string, string> = Object.fromEntries((pr || []).map((x: any) => [x.user_id, x.email || x.display_name || 'Member']));
     setMembers((m || []).map((x: any) => ({ user_id: x.user_id, role: x.role, name: nm[x.user_id] || 'Member' })));
-    const { data: iv } = await supabase.from('invites').select('code,role,new_company,company_id').or(`company_id.eq.${companyId},source_company.eq.${companyId}`).is('used_at', null).gt('expires_at', new Date().toISOString());
+    const { data: iv } = await supabase.from('invites').select('code,role,new_company,company_id,extra_companies').or(`company_id.eq.${companyId},source_company.eq.${companyId}`).is('used_at', null).gt('expires_at', new Date().toISOString());
     setInvites(iv || []);
   };
   useEffect(() => { load(); }, [companyId]); // eslint-disable-line
@@ -752,7 +756,7 @@ function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; 
       <div className="muted">They get their own company in the app, with their own team and customers. You are not able to see their jobs.</div>
       <button className="btn ghost" onClick={makeCompany}>Create company invite link</button>
       {invites.length > 0 && <h3>Links not used yet</h3>}
-      {invites.map((i) => <ShareLink key={i.code} url={link(i.code)} company={companies.find((c) => c.id === i.company_id)?.name || 'the app'} label={i.new_company ? 'Company invite' : (ROLE_LABEL[i.role] || i.role) + ' invite'} />)}
+      {invites.map((i) => { const names = [i.company_id, ...(i.extra_companies || [])].map((id) => companies.find((c) => c.id === id)?.name).filter(Boolean).join(' + '); return <ShareLink key={i.code} url={link(i.code)} company={names || 'the app'} label={(i.new_company ? 'Company invite' : (ROLE_LABEL[i.role] || i.role) + ' invite') + (names ? ` · ${names}` : '')} />; })}
       <div className="muted">Each link works once and expires in 14 days.</div>
       <h3>Members</h3>
       <div className="group" style={{ margin: '0 -20px' }}>{members.map((m) => <div key={m.user_id} className="row static"><span className="grow">{m.name}</span><span className="tag">{ROLE_LABEL[m.role] || m.role}</span></div>)}</div>
