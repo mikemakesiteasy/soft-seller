@@ -213,7 +213,7 @@ export default function App() {
         </div>
       )}
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
-      {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
+      {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: appUrl() } }); const em = r.error?.message || ''; if (/not confirmed/i.test(em)) return 'Check your email: tap the link in the message we sent, then come back here and tap Sign in.'; return em || (mode === 'up' && !r.data.session ? 'Check your email and tap the link inside. If the page that opens looks broken, that is fine. Come back here and tap Sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
         const now = new Date(), first = (st.user || 'there').split(' ')[0];
         const week = Array.from({ length: 7 }, (_, k) => { const d = new Date(now); d.setDate(now.getDate() - ((now.getDay() + 6) % 7) + k); return d; });
