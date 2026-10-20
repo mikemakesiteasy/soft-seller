@@ -172,7 +172,7 @@ export default function App() {
     const b = st.uid ? st.brand : loginBrand || plat;
     applyTheme((b as any)?.color || (st.uid ? undefined : plat.color), (b as any)?.dark || (st.uid ? undefined : plat.dark));
   }, [st.uid, st.brand, loginBrand, plat]);
-  useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Sell'; }, [st.uid, st.companyName, loginBrand, plat]);
+  useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
   const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
@@ -729,7 +729,7 @@ function PlatformScreen({ plat, me, back, onSave }: { plat: Plat; me?: string; b
   const f = (k: keyof Plat, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={p[k] || ''} onChange={(e) => { setP({ ...p, [k]: e.target.value }); setMsg(''); }} /></div>;
   return (
     <Page title="Platform brand" kicker="Developer" sub="The app's own name and look, shown on the login page and for companies that haven't set their own brand." back={back} backLabel="Home">
-      {f('app_name', 'App name', 'Soft Sell')}
+      {f('app_name', 'App name', 'Your app name')}
       {f('tagline', 'Login tagline', 'Sign in to your account')}
       {f('logo', 'Logo web address (PNG or SVG)', 'https://…')}
       <div className="pricegrid">
@@ -962,7 +962,7 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
   return (
     <main className="loginwrap">
       <header className="loginhero">
-        {brand ? (brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>) : plat.logo ? <img src={plat.logo} alt={plat.app_name} className="herologo" /> : <b className="herotext">{plat.app_name || 'Soft Sell'}</b>}
+        {brand ? (brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>) : plat.logo ? <img src={plat.logo} alt={plat.app_name} className="herologo" /> : <b className="herotext">{plat.app_name || 'Soft Water Specialists'}</b>}
         <div>
           <h1>{brand?.tagline || plat.tagline || 'Sign in to your account'}</h1>
           <div className="sub">Sign in to continue</div>

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import SwRegister from './sw-register';
 
-export const metadata: Metadata = { title: 'Soft Water Specialists', description: 'Field app for water diagnosis, proposals and orders', manifest: '/manifest.webmanifest', appleWebApp: { capable: true, title: 'Soft Sell', statusBarStyle: 'black-translucent' } };
+export const metadata: Metadata = { title: 'Soft Water Specialists', description: 'Field app for water diagnosis, proposals and orders', manifest: '/manifest.webmanifest', appleWebApp: { capable: true, title: 'Soft Water Specialists', statusBarStyle: 'black-translucent' } };
 export const viewport: Viewport = { themeColor: '#0d2550', width: 'device-width', initialScale: 1, viewportFit: 'cover' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

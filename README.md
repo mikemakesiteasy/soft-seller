@@ -1,4 +1,4 @@
-# Soft Sell
+# Field app
 
 Mobile-first field app for Soft Water Specialists (Next.js PWA + Supabase).
 
