@@ -1,16 +1,16 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
-type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand };
+type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 // Links we create (invites, password resets) use the public address, never the hosting address.
@@ -75,21 +75,27 @@ export default function App() {
       let inviteErr = '';
       let inv: string | null = null;
       try { inv = localStorage.getItem('sws-invite'); localStorage.removeItem('sws-invite'); } catch {}
-      if (inv) { const { error } = await supabase.rpc('redeem_invite', { p_code: inv }); if (error) inviteErr = error.message; }
+      let pendingCode = '';
+      if (inv) {
+        const { data: info } = await supabase.rpc('invite_info', { p_code: inv });
+        if (info?.new_company) pendingCode = inv;
+        else { const { error } = await supabase.rpc('redeem_invite', { p_code: inv }); if (error) inviteErr = error.message; }
+      }
       const { data: prof } = await supabase.from('profiles').select('display_name,is_developer,active_company_id').maybeSingle();
       const { data: mem } = await supabase.from('memberships').select('company_id,role');
-      const { data: cos } = await supabase.from('companies').select('id,name,slug,settings').order('name');
+      const { data: cos } = await supabase.from('companies').select('id,name,slug,kind,parent_id,settings').order('name');
       const roleOf: Record<string, string> = Object.fromEntries((mem || []).map((m: any) => [m.company_id, m.role]));
-      const companies: Co[] = (cos || []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, role: roleOf[c.id] || 'admin', brand: c.settings?.brand || {} }));
+      const companies: Co[] = (cos || []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, role: roleOf[c.id] || 'admin', brand: c.settings?.brand || {}, kind: c.kind, parent_id: c.parent_id }));
       let active: string | undefined = prof?.active_company_id || undefined;
       if (!companies.find((c) => c.id === active)) { active = companies[0]?.id; if (active) await supabase.rpc('set_active_company', { p_company: active }); }
-      if (!active) { setSt((x) => ({ ...x, screen: 'pending', user: prof?.display_name || email, uid, companyId: undefined, companies: [], dev: !!prof?.is_developer, inviteErr })); return; }
+      if (!active) { setSt((x) => ({ ...x, screen: 'pending', user: prof?.display_name || email, uid, companyId: undefined, companies: [], dev: !!prof?.is_developer, inviteErr, pendingCode })); return; }
       const co = companies.find((c) => c.id === active)!;
-      const [{ data: rows }, { data: cat }, { data: cfgRow }, { data: tk }] = await Promise.all([
+      const [{ data: rows }, { data: cat }, { data: cfgRow }, { data: tk }, { data: effBrand }] = await Promise.all([
         supabase.from('jobs').select('id,data'),
         supabase.from('catalog_items').select('sku,name,cost,msrp'),
         supabase.from('companies').select('settings').eq('id', active).maybeSingle(),
         supabase.from('tickets').select('id,topic,routed_to,body,urgent,author_id'),
+        supabase.rpc('effective_brand', { p_company: active }),
       ]);
       remoteSettings.current = cfgRow?.settings || {};
       const cfg = remoteSettings.current;
@@ -99,7 +105,7 @@ export default function App() {
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, brand: cfg.brand,
+        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -123,14 +129,14 @@ export default function App() {
     const t = setTimeout(() => {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
-      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, brand: st.brand }).filter(([, v]) => v !== undefined)) };
+      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy }).filter(([, v]) => v !== undefined)) };
       if (JSON.stringify(next) !== JSON.stringify(remoteSettings.current)) {
         remoteSettings.current = next;
         supabase.from('companies').update({ settings: next }).eq('id', st.companyId!).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.brand, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
   const stRef = useRef(st);
   stRef.current = st;
   useEffect(() => {
@@ -416,7 +422,9 @@ export default function App() {
               ['Products & pricing', `${Object.keys(CAT).length} products`, 'catalog', Box],
               ['Kits & rules', `${RULES.length} rules`, 'kits', Wrench],
               ['Messages', 'Push · Text · Email', 'messages', MessageSquare],
-              ['Team', 'Members and invites', 'team', Users],
+              ['Team', 'Employees, dealers, companies', 'team', Users],
+              ...((st.companyKind === 'franchisor') ? [['Locations', 'Your franchise locations', 'locations', Building2]] : []),
+              ['Connected apps', 'Housecall Pro, Angi, leads', 'integrations', Link2],
               ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
               ...(st.dev ? [['Platform brand', 'App name, logo, colors', 'platform', Palette], ['Company brand', 'Name, logo, colors, contact', 'brand', Palette]] : []),
               ...(st.dev ? [['All companies', `${(st.companies || []).length} on the platform`, 'companies', Building2]] : []),
@@ -541,9 +549,24 @@ export default function App() {
           )}
         </Page>
       )}
+      {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
+      {st.screen === 'platform' && st.dev && (
+        <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
+      )}
+      {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} isDev={!!st.dev} back={() => go('admin')} />}
+      {st.screen === 'locations' && st.companyId && <LocationsScreen back={() => go('admin')} />}
+      {st.screen === 'integrations' && st.companyId && <IntegrationsScreen back={() => go('admin')} />}
+      {st.screen === 'brand' && st.companyId && st.dev && (
+        <BrandScreen companyId={st.companyId} name={coName} back={() => go('admin')}
+          onSaved={async (name) => { const { data } = await supabase.rpc('effective_brand', { p_company: st.companyId! }); setSt((x) => ({ ...x, companyName: name, brand: data || {}, companies: (x.companies || []).map((c) => (c.id === x.companyId ? { ...c, name } : c)) })); }} />
+      )}
+      {st.screen === 'companies' && (
+        <CompaniesScreen list={st.companies || []} active={st.companyId} back={() => go('admin')} onEnter={switchCompany}
+          onCreate={async (name, slug, kind, parent) => { const { error } = await supabase.rpc('create_company', { p_name: name, p_slug: slug, p_kind: kind, p_parent: parent || null }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
+      )}
       {st.screen === 'pending' && (
-        <PendingScreen user={st.user || ''} err={(st as any).inviteErr} dev={!!st.dev} onSignOut={signOut}
-          onRedeem={async (code) => { const { error } = await supabase.rpc('redeem_invite', { p_code: code }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
+        <PendingScreen user={st.user || ''} err={(st as any).inviteErr} dev={!!st.dev} onSignOut={signOut} startCode={st.pendingCode}
+          onRedeem={async (code, name) => { const { error } = await supabase.rpc('redeem_invite', { p_code: code, p_company_name: name || null }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
       )}
       {showTabs && <TabBar screen={st.screen} admin={st.role === 'admin'} canSwitch={!!st.dev || (st.companies || []).length > 1} go={(x) => go(x)} onMe={signOut} />}
       <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
@@ -628,33 +651,39 @@ function NewJob({ back, onCreate }: { back: () => void; onCreate: (m: Meta) => v
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', tech: 'Technician', plumber: 'Plumbing partner', dealer: 'Authorized dealer', diy: 'DIY homeowner', franchisor: 'Franchise HQ' };
 
-function TeamScreen({ companyId, back }: { companyId: string; back: () => void }) {
+function TeamScreen({ companyId, isDev, back }: { companyId: string; isDev: boolean; back: () => void }) {
   const [members, setMembers] = useState<{ user_id: string; role: string; name: string }[]>([]);
-  const [invites, setInvites] = useState<{ code: string; role: string }[]>([]);
-  const [role, setRole] = useState('tech'), [msg, setMsg] = useState(''), [copied, setCopied] = useState('');
+  const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean }[]>([]);
+  const roles: [string, string][] = [['admin', 'Admin / owner'], ['tech', 'Technician (employee)'], ['plumber', 'Plumbing partner'], ['dealer', 'Authorized dealer']].filter(([k]) => !(isDev && (k === 'tech' || k === 'plumber'))) as [string, string][];
+  const [role, setRole] = useState(roles[0][0]), [msg, setMsg] = useState(''), [copied, setCopied] = useState('');
   const load = async () => {
     const { data: m } = await supabase.from('memberships').select('user_id,role').eq('company_id', companyId);
     const ids = (m || []).map((x: any) => x.user_id);
     const { data: pr } = ids.length ? await supabase.from('profiles').select('user_id,display_name,email').in('user_id', ids) : { data: [] as any[] };
     const nm: Record<string, string> = Object.fromEntries((pr || []).map((x: any) => [x.user_id, x.email || x.display_name || 'Member']));
     setMembers((m || []).map((x: any) => ({ user_id: x.user_id, role: x.role, name: nm[x.user_id] || 'Member' })));
-    const { data: iv } = await supabase.from('invites').select('code,role').eq('company_id', companyId).is('used_at', null).gt('expires_at', new Date().toISOString());
+    const { data: iv } = await supabase.from('invites').select('code,role,new_company').or(`company_id.eq.${companyId},source_company.eq.${companyId}`).is('used_at', null).gt('expires_at', new Date().toISOString());
     setInvites(iv || []);
   };
   useEffect(() => { load(); }, [companyId]); // eslint-disable-line
   const make = async () => { setMsg(''); const { error } = await supabase.rpc('create_invite', { p_company: companyId, p_role: role }); if (error) setMsg(error.message); else load(); };
+  const makeCompany = async () => { setMsg(''); const { error } = await supabase.rpc('create_company_invite', { p_company: companyId }); if (error) setMsg(error.message); else load(); };
   const link = (c: string) => `${appUrl()}/?invite=${c}`;
   return (
-    <Page title="Team" kicker="Members and invites" back={back} backLabel="Home">
-      <h3>Invite someone</h3>
-      <div className="pills">{Object.entries(ROLE_LABEL).filter(([k]) => k !== 'franchisor').map(([k, l]) => <button key={k} className={role === k ? 'on' : ''} onClick={() => setRole(k)}>{l}</button>)}</div>
+    <Page title="Team" kicker="Employees, dealers and companies" back={back} backLabel="Home">
+      <h3>Invite a person to this company</h3>
+      <div className="pills">{roles.map(([k, l]) => <button key={k} className={role === k ? 'on' : ''} onClick={() => setRole(k)}>{l}</button>)}</div>
       <button className="btn" onClick={make}>Create invite link</button>
+      {isDev && <div className="muted">Technicians and plumbers are added by each company's own admin.</div>}
+      <h3>Invite another company</h3>
+      <div className="muted">They get their own company in the app, with their own team and customers. You are not able to see their jobs.</div>
+      <button className="btn ghost" onClick={makeCompany}>Create company invite link</button>
       {msg && <div className="err">{msg}</div>}
       {invites.map((i) => (
-        <div key={i.code} className="card"><b>{ROLE_LABEL[i.role] || i.role} invite</b><div className="muted" style={{ wordBreak: 'break-all' }}>{link(i.code)}</div>
+        <div key={i.code} className="card"><b>{i.new_company ? 'Company invite' : (ROLE_LABEL[i.role] || i.role) + ' invite'}</b><div className="muted" style={{ wordBreak: 'break-all' }}>{link(i.code)}</div>
           <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(link(i.code)); setCopied(i.code); }}>{copied === i.code ? 'Copied ✓' : 'Copy link'}</button></div>
       ))}
-      <div className="muted">Each link works once and expires in 14 days. The person signs up, and joins this company.</div>
+      <div className="muted">Each link works once and expires in 14 days.</div>
       <h3>Members</h3>
       <div className="group" style={{ margin: '0 -20px' }}>{members.map((m) => <div key={m.user_id} className="row static"><span className="grow">{m.name}</span><span className="tag">{ROLE_LABEL[m.role] || m.role}</span></div>)}</div>
     </Page>
@@ -692,11 +721,18 @@ function PlatformScreen({ plat, me, back, onSave }: { plat: Plat; me?: string; b
   );
 }
 
-function BrandScreen({ name, brand, back, onSave }: { name: string; brand: Brand; back: () => void; onSave: (name: string, b: Brand) => Promise<void> }) {
-  const [n, setN] = useState(name), [b, setB] = useState<Brand>(brand), [saved, setSaved] = useState(false);
+function BrandScreen({ companyId, name, back, onSaved }: { companyId: string; name: string; back: () => void; onSaved: (name: string) => Promise<void> }) {
+  const [n, setN] = useState(name), [b, setB] = useState<Brand>({}), [saved, setSaved] = useState(false), [loaded, setLoaded] = useState(false);
+  useEffect(() => { supabase.from('companies').select('settings').eq('id', companyId).maybeSingle().then(({ data }) => { setB(data?.settings?.brand || {}); setLoaded(true); }); }, [companyId]);
+  const save = async () => {
+    const { data } = await supabase.from('companies').select('settings').eq('id', companyId).maybeSingle();
+    const clean: Brand = Object.fromEntries(Object.entries(b).filter(([, v]) => v)) as Brand;
+    await supabase.from('companies').update({ name: n.trim(), settings: { ...(data?.settings || {}), brand: clean } }).eq('id', companyId);
+    await onSaved(n.trim()); setSaved(true);
+  };
   const f = (k: keyof Brand, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={b[k] || ''} onChange={(e) => { setB({ ...b, [k]: e.target.value }); setSaved(false); }} /></div>;
   return (
-    <Page title="Company & brand" kicker="Shown on login, proposals and messages" back={back} backLabel="Home">
+    <Page title="Company brand" kicker="Developer only" sub="Anything left blank uses the franchise headquarters' brand, if there is one." back={back} backLabel="Home">
       <div className="field"><label className="lbl">Company name</label><input className="in" value={n} onChange={(e) => { setN(e.target.value); setSaved(false); }} /></div>
       {f('tagline', 'Tagline', 'We diagnose. We solve. We protect what matters.')}
       {f('phone', 'Phone')}
@@ -706,15 +742,16 @@ function BrandScreen({ name, brand, back, onSave }: { name: string; brand: Brand
         <div className="field"><label className="lbl">Accent color</label><input className="in colorin" type="color" value={b.color || '#1f72d6'} onChange={(e) => { setB({ ...b, color: e.target.value }); setSaved(false); }} /></div>
         <div className="field"><label className="lbl">Header color</label><input className="in colorin" type="color" value={b.dark || '#0b2a5c'} onChange={(e) => { setB({ ...b, dark: e.target.value }); setSaved(false); }} /></div>
       </div>
-      <div className="actions"><button className="btn" disabled={!n.trim()} onClick={async () => { await onSave(n.trim(), b); setSaved(true); }}>{saved ? 'Saved ✓' : 'Save'}</button></div>
+      <div className="actions"><button className="btn" disabled={!n.trim() || !loaded} onClick={save}>{saved ? 'Saved ✓' : 'Save'}</button></div>
     </Page>
   );
 }
 
-type Overview = { id: string; name: string; slug: string | null; admins: string[]; members: number; jobs: number; tickets: number; last_activity: string | null };
+type Overview = { kind?: string; parent_name?: string | null; id: string; name: string; slug: string | null; admins: string[]; members: number; jobs: number; tickets: number; last_activity: string | null };
 
-function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]; active?: string; back: () => void; onEnter: (id: string) => void; onCreate: (name: string, slug: string) => Promise<string> }) {
-  const [name, setName] = useState(''), [slug, setSlug] = useState(''), [msg, setMsg] = useState('');
+function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]; active?: string; back: () => void; onEnter: (id: string) => void; onCreate: (name: string, slug: string, kind: string, parent?: string) => Promise<string> }) {
+  const [name, setName] = useState(''), [slug, setSlug] = useState(''), [msg, setMsg] = useState(''), [kind, setKind] = useState('independent'), [parent, setParent] = useState('');
+  const hqs = list.filter((c) => c.kind === 'franchisor');
   const [ov, setOv] = useState<Overview[]>([]), [links, setLinks] = useState<Record<string, string>>({}), [copied, setCopied] = useState('');
   useEffect(() => { supabase.rpc('company_overview').then(({ data }) => { if (data) setOv(data); }); }, [list.length]);
   const invite = async (id: string) => {
@@ -728,6 +765,7 @@ function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]
       {ov.map((c) => (
         <div key={c.id} className={'card ' + (c.id === active ? 'best' : '')}>
           <div className="between"><h3>{c.name}</h3>{c.id === active && <span className="tag">Open</span>}</div>
+          <div className="muted">{c.kind === 'franchisor' ? 'Franchise headquarters' : c.kind === 'location' ? `Franchise location of ${c.parent_name || 'a headquarters'}` : 'Independent company'}</div>
           <div className="muted">{c.slug ? `Login link: /?co=${c.slug}` : 'No login link'}</div>
           <div>{c.admins.length ? <>Owner: <b>{c.admins.join(', ')}</b></> : <b>No owner yet</b>}</div>
           <div className="muted">{c.members} {c.members === 1 ? 'person' : 'people'} · {c.jobs} jobs · {c.tickets} tickets · {when(c.last_activity)}</div>
@@ -742,22 +780,104 @@ function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]
       <div className="card"><b>Create a company</b>
         <input className="in" placeholder="Company name" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="in" placeholder="Login link name (optional, e.g. zplumberz)" value={slug} onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, ''))} />
-        <button className="btn" disabled={!name.trim()} onClick={async () => { setMsg(await onCreate(name, slug)); }}>Create and open</button>
+        <div className="pills">{[['independent', 'Independent company'], ['franchisor', 'Franchise headquarters'], ['location', 'Franchise location']].map(([k, l]) => <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{l}</button>)}</div>
+        {kind === 'location' && (hqs.length ? <select className="in" value={parent} onChange={(e) => setParent(e.target.value)}><option value="">Which headquarters?</option>{hqs.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}</select> : <div className="muted">Create the franchise headquarters first.</div>)}
+        <button className="btn" disabled={!name.trim() || (kind === 'location' && !parent)} onClick={async () => { setMsg(await onCreate(name, slug, kind, parent)); }}>Create and open</button>
         <div className="muted">New companies start with a copy of the product catalog. Then use Invite owner to send its owner a link; they sign up and become its admin.</div>
       </div>
     </Page>
   );
 }
 
-function PendingScreen({ user, err, dev, onRedeem, onSignOut }: { user: string; err?: string; dev: boolean; onRedeem: (code: string) => Promise<string>; onSignOut: () => void }) {
-  const [code, setCode] = useState(''), [msg, setMsg] = useState(err || ''), [busy, setBusy] = useState(false);
+type LocRow = { id: string; name: string; slug: string | null; admins: string[]; members: number; jobs: number; tickets: number; last_activity: string | null };
+
+function LocationsScreen({ back }: { back: () => void }) {
+  const [rows, setRows] = useState<LocRow[]>([]), [name, setName] = useState(''), [slug, setSlug] = useState(''), [msg, setMsg] = useState('');
+  const [links, setLinks] = useState<Record<string, string>>({}), [copied, setCopied] = useState('');
+  const load = () => supabase.rpc('franchise_overview').then(({ data, error }) => { if (error) setMsg(error.message); else setRows(data || []); });
+  useEffect(() => { load(); }, []);
+  const add = async () => { setMsg(''); const { error } = await supabase.rpc('create_location', { p_name: name, p_slug: slug }); if (error) setMsg(error.message); else { setName(''); setSlug(''); load(); } };
+  const invite = async (id: string) => { const { data, error } = await supabase.rpc('create_invite', { p_company: id, p_role: 'admin' }); if (error) setMsg(error.message); else setLinks((l) => ({ ...l, [id]: `${appUrl()}/?invite=${data}` })); };
+  const when = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No activity yet');
   return (
-    <Page title="Join your company" kicker="One more step" sub={user} right={<button className="backbtn" onClick={onSignOut}>Sign out</button>}>
-      <div className="card"><b>You're signed in, but not part of a company yet.</b><div className="muted">Open the invite link your company admin sent you, or paste its code here.</div></div>
-      <div className="field"><label className="lbl">Invite code or link</label><input className="in" value={code} onChange={(e) => setCode(e.target.value)} placeholder="a1b2c3d4e5f6" /></div>
+    <Page title="Locations" kicker="Franchise headquarters" sub="Each location has its own team and customers. You see who runs it and how active it is, not its customers or jobs." back={back} backLabel="Home">
+      {rows.map((c) => (
+        <div key={c.id} className="card"><h3>{c.name}</h3>
+          <div>{c.admins.length ? <>Owner: <b>{c.admins.join(', ')}</b></> : <b>No owner yet</b>}</div>
+          <div className="muted">{c.members} {c.members === 1 ? 'person' : 'people'} · {c.jobs} jobs · {when(c.last_activity)}</div>
+          {links[c.id] && <div className="okmsg" style={{ wordBreak: 'break-all' }}>{links[c.id]}</div>}
+          <button className="btn ghost sm" onClick={() => (links[c.id] ? (navigator.clipboard?.writeText(links[c.id]), setCopied(c.id)) : invite(c.id))}>{links[c.id] ? (copied === c.id ? 'Copied ✓' : 'Copy link') : 'Invite owner'}</button>
+        </div>
+      ))}
+      {!rows.length && <div className="muted">No locations yet.</div>}
       {msg && <div className="err">{msg}</div>}
-      <button className="btn" disabled={busy || !code.trim()} onClick={async () => { setBusy(true); const c = code.trim().split('invite=').pop()!; setMsg(await onRedeem(c)); setBusy(false); }}>Join company</button>
-      {dev && <div className="muted">You are the platform developer: ask for a company to be created and it will appear here.</div>}
+      <div className="card"><b>Add a location</b>
+        <input className="in" placeholder="Location name (e.g. Z Plumberz of Tri-Cities)" value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="in" placeholder="Login link name (optional)" value={slug} onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, ''))} />
+        <button className="btn" disabled={!name.trim()} onClick={add}>Add location</button>
+        <div className="muted">It starts with a copy of your product catalog and your brand. Then invite its owner.</div>
+      </div>
+    </Page>
+  );
+}
+
+const PROVIDERS: { k: string; name: string; what: string; how: string }[] = [
+  { k: 'housecall_pro', name: 'Housecall Pro', what: 'Jobs and scheduling', how: 'In Housecall Pro, create an API key (it needs a plan that includes API access) and paste it here.' },
+  { k: 'angi', name: 'Angi (Angie\'s List)', what: 'Leads and appointments', how: 'Angi shares leads through its partner program. Paste your partner API key if Angi has given you one.' },
+  { k: 'thumbtack', name: 'Thumbtack', what: 'Leads', how: 'Paste your Thumbtack partner API token if you have one.' },
+  { k: 'homeadvisor', name: 'HomeAdvisor', what: 'Leads', how: 'Paste your HomeAdvisor partner token if you have one.' },
+  { k: 'google_lsa', name: 'Google Local Services', what: 'Leads', how: 'Paste your Google Local Services access token.' },
+  { k: 'jobber', name: 'Jobber', what: 'Jobs and scheduling', how: 'Paste your Jobber API token.' },
+  { k: 'servicetitan', name: 'ServiceTitan', what: 'Jobs and scheduling', how: 'Paste your ServiceTitan client credentials.' },
+  { k: 'google_calendar', name: 'Google Calendar', what: 'Appointments', how: 'Paste a calendar access token.' },
+];
+
+function IntegrationsScreen({ back }: { back: () => void }) {
+  const [rows, setRows] = useState<{ provider: string; status: string; account_label: string | null }[]>([]);
+  const [open, setOpen] = useState(''), [label, setLabel] = useState(''), [secret, setSecret] = useState(''), [msg, setMsg] = useState('');
+  const load = () => supabase.from('integrations').select('provider,status,account_label').then(({ data }) => setRows(data || []));
+  useEffect(() => { load(); }, []);
+  const save = async (k: string) => { setMsg(''); const { error } = await supabase.rpc('save_integration', { p_provider: k, p_label: label, p_secret: secret }); if (error) { setMsg(error.message); return; } setOpen(''); setSecret(''); setLabel(''); load(); };
+  const remove = async (k: string) => { await supabase.rpc('remove_integration', { p_provider: k }); load(); };
+  return (
+    <Page title="Connected apps" kicker="Scheduling and leads" sub="Link the apps you already use so jobs and leads can come into this app." back={back} backLabel="Home">
+      <div className="okmsg">Keys you enter are stored securely and can't be read back by anyone in the app. Live syncing is being switched on app by app; saving a key now means it will start working when that connection goes live.</div>
+      {PROVIDERS.map((pv) => {
+        const row = rows.find((r) => r.provider === pv.k);
+        return (
+          <div key={pv.k} className="card"><div className="between"><h3>{pv.name}</h3>{row && <span className="tag">Key saved</span>}</div>
+            <div className="muted">{pv.what}{row?.account_label ? ` · ${row.account_label}` : ''}</div>
+            {open === pv.k ? (
+              <>
+                <div className="muted">{pv.how}</div>
+                <input className="in" placeholder="Account name (optional)" value={label} onChange={(e) => setLabel(e.target.value)} />
+                <input className="in" type="password" placeholder="Key or token" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
+                {msg && <div className="err">{msg}</div>}
+                <div className="btnrow"><button className="btn sm" onClick={() => save(pv.k)}>Save</button><button className="btn ghost sm" onClick={() => { setOpen(''); setMsg(''); }}>Cancel</button></div>
+              </>
+            ) : (
+              <div className="btnrow"><button className="btn ghost sm" onClick={() => { setOpen(pv.k); setLabel(row?.account_label || ''); setSecret(''); }}>{row ? 'Replace key' : 'Connect'}</button>{row && <button className="btn ghost sm" onClick={() => remove(pv.k)}>Remove</button>}</div>
+            )}
+          </div>
+        );
+      })}
+    </Page>
+  );
+}
+
+function PendingScreen({ user, err, dev, startCode, onRedeem, onSignOut }: { user: string; err?: string; dev: boolean; startCode?: string; onRedeem: (code: string, name?: string) => Promise<string>; onSignOut: () => void }) {
+  const [code, setCode] = useState(startCode || ''), [name, setName] = useState(''), [msg, setMsg] = useState(err || ''), [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<{ new_company?: boolean; company?: string } | null>(null);
+  const clean = code.trim().split('invite=').pop()!.trim();
+  useEffect(() => { if (clean.length < 6) { setInfo(null); return; } supabase.rpc('invite_info', { p_code: clean }).then(({ data }) => setInfo(data || null)); }, [clean]);
+  return (
+    <Page root title={info?.new_company ? 'Set up your company' : 'Join your company'} kicker="One more step" sub={user} right={<button className="backbtn" onClick={onSignOut}>Sign out</button>}>
+      <div className="card"><b>You're signed in, but not part of a company yet.</b><div className="muted">Open the invite link you were sent, or paste its code here.</div></div>
+      <div className="field"><label className="lbl">Invite code or link</label><input className="in" value={code} onChange={(e) => setCode(e.target.value)} placeholder="a1b2c3d4e5f6" /></div>
+      {info?.new_company && <div className="field"><label className="lbl">Your company name{info.company ? ` (invited by ${info.company})` : ''}</label><input className="in" value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Water Co." /></div>}
+      {msg && <div className="err">{msg}</div>}
+      <button className="btn" disabled={busy || !clean || (!!info?.new_company && name.trim().length < 2)} onClick={async () => { setBusy(true); setMsg(await onRedeem(clean, name)); setBusy(false); }}>{info?.new_company ? 'Create my company' : 'Join company'}</button>
+      {dev && <div className="muted">You are the platform developer: create or open a company from All companies once you are in.</div>}
     </Page>
   );
 }
