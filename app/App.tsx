@@ -972,8 +972,6 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
         <div className="field"><label className="lbl">Email</label><input className="in" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
         <div className="field"><label className="lbl">Password</label><input className="in" type="password" placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && email && pw.length >= 6 && run('in')} /></div>
         <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>Sign in</button>
-        <div className="orline"><i />or sign in with<i /></div>
-        <button className="btn ghost sso" onClick={() => setMsg('Google sign-in is being set up. Use your email and password for now.')}><span className="gdot" />Google</button>
         {msg && <div className={msg.startsWith('Check') ? 'okmsg' : 'err'}>{msg}</div>}
         <button className="link left" onClick={forgot}>Forgot password?</button>
         <button className="link left" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create an account</button>
