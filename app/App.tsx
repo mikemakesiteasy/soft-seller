@@ -4,7 +4,7 @@ import { Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones,
 import { supabase } from '@/lib/supabase';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
@@ -52,6 +52,17 @@ export default function App() {
   const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
   const [loginBrand, setLoginBrand] = useState<(Brand & { name: string }) | null>(null);
   const [plat, setPlat] = useState<Plat>({});
+  const installEvt = useRef<any>(null);
+  const [canInstall, setCanInstall] = useState(false), [barOpen, setBarOpen] = useState(false);
+  useEffect(() => {
+    const standalone = window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone;
+    let dismissed = false; try { dismissed = localStorage.getItem('sws-phone-bar') === '1'; } catch {}
+    setBarOpen(!standalone && !dismissed);
+    const onPrompt = (e: any) => { e.preventDefault(); installEvt.current = e; setCanInstall(true); };
+    const onInstalled = () => { setBarOpen(false); setCanInstall(false); };
+    window.addEventListener('beforeinstallprompt', onPrompt); window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); window.removeEventListener('appinstalled', onInstalled); };
+  }, []);
   useEffect(() => {
     try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), online: navigator.onLine }); } catch {}
     try {
@@ -188,6 +199,13 @@ export default function App() {
   return (
     <HomeCtx.Provider value={home}>
     <div className={'shell ' + (showTabs ? 'withtabs' : '')}>
+      {barOpen && (st.screen === 'jobs' || st.screen === 'admin') && (
+        <div className="setupbar">
+          <div><b>Set up your phone</b><span>Put the app on your Home Screen</span></div>
+          <button className="startbtn" onClick={() => go('phonesetup')}>Start</button>
+          <button className="xbtn" aria-label="Dismiss" onClick={() => { setBarOpen(false); try { localStorage.setItem('sws-phone-bar', '1'); } catch {} }}>✕</button>
+        </div>
+      )}
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
       {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw }); return r.error?.message || (mode === 'up' && !r.data.session ? 'Check your email to confirm your account, then sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
@@ -552,6 +570,17 @@ export default function App() {
       {st.screen === 'newjob' && <NewJob back={() => go('jobs')} onCreate={(m) => { setSt((x) => ({ ...x, jobs: { ...x.jobs, [m.id]: blank(m, x.role === 'plumber' ? 'quick' : 'full') }, jobId: m.id, screen: 'overview' })); window.scrollTo(0, 0); }} />}
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
+      )}
+      {st.screen === 'phonesetup' && (
+        <Page title="Put the app on your phone" kicker="Takes one minute" sub="It then opens like any other app, full screen, with its own icon." back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} backLabel="Back">
+          {canInstall && <button className="btn" onClick={async () => { const e = installEvt.current; if (!e) return; e.prompt(); await e.userChoice; installEvt.current = null; setCanInstall(false); }}>Install the app</button>}
+          <div className="card"><h3>iPhone or iPad</h3>
+            <ol className="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (the square with an arrow).</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li></ol></div>
+          <div className="card"><h3>Android</h3>
+            <ol className="steps"><li>Open this page in <b>Chrome</b>.</li><li>Tap <b>Install the app</b> above, or the menu (three dots) then <b>Install app</b>.</li><li>Tap <b>Install</b>.</li></ol></div>
+          <div className="muted">Once it is on your phone, the app keeps working without signal and syncs when you are back online.</div>
+          <div className="actions"><button className="btn ghost" onClick={() => { setBarOpen(false); try { localStorage.setItem('sws-phone-bar', '1'); } catch {} go(st.role === 'admin' ? 'admin' : 'jobs'); }}>Done, hide the reminder</button></div>
+        </Page>
       )}
       {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} isDev={!!st.dev} back={() => go('admin')} />}
       {st.screen === 'locations' && st.companyId && <LocationsScreen back={() => go('admin')} />}
