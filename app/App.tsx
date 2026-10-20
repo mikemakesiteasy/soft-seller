@@ -13,6 +13,8 @@ type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Recor
 type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
+// Links we create (invites, password resets) use the public address, never the hosting address.
+const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || window.location.origin).replace(/\/$/, '');
 const ADMIN_SUB = ['catalog', 'kits', 'packing', 'porders', 'inbox', 'messages', 'setup', 'team', 'brand', 'platform', 'companies'];
 const TAB_SCREENS = ['jobs', 'admin', 'help', 'switch', ...ADMIN_SUB];
 const HomeCtx = createContext<(() => void) | null>(null);
@@ -641,7 +643,7 @@ function TeamScreen({ companyId, back }: { companyId: string; back: () => void }
   };
   useEffect(() => { load(); }, [companyId]); // eslint-disable-line
   const make = async () => { setMsg(''); const { error } = await supabase.rpc('create_invite', { p_company: companyId, p_role: role }); if (error) setMsg(error.message); else load(); };
-  const link = (c: string) => `${window.location.origin}/?invite=${c}`;
+  const link = (c: string) => `${appUrl()}/?invite=${c}`;
   return (
     <Page title="Team" kicker="Members and invites" back={back} backLabel="Home">
       <h3>Invite someone</h3>
@@ -664,7 +666,7 @@ function PlatformScreen({ plat, me, back, onSave }: { plat: Plat; me?: string; b
   const [devs, setDevs] = useState<{ user_id: string; name: string }[]>([]), [link, setLink] = useState(''), [err, setErr] = useState(''), [copied, setCopied] = useState(false);
   const loadDevs = async () => { const { data } = await supabase.from('profiles').select('user_id,email,display_name').eq('is_developer', true); setDevs((data || []).map((d: any) => ({ user_id: d.user_id, name: d.email || d.display_name || 'Developer' }))); };
   useEffect(() => { loadDevs(); }, []);
-  const invite = async () => { setErr(''); const { data, error } = await supabase.rpc('create_developer_invite'); if (error) setErr(error.message); else { setLink(`${window.location.origin}/?invite=${data}`); setCopied(false); } };
+  const invite = async () => { setErr(''); const { data, error } = await supabase.rpc('create_developer_invite'); if (error) setErr(error.message); else { setLink(`${appUrl()}/?invite=${data}`); setCopied(false); } };
   const remove = async (id: string) => { setErr(''); const { error } = await supabase.rpc('set_developer', { p_user: id, p_flag: false }); if (error) setErr(error.message); else loadDevs(); };
   const f = (k: keyof Plat, label: string, ph = '') => <div className="field"><label className="lbl">{label}</label><input className="in" placeholder={ph} value={p[k] || ''} onChange={(e) => { setP({ ...p, [k]: e.target.value }); setMsg(''); }} /></div>;
   return (
@@ -718,7 +720,7 @@ function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]
   const invite = async (id: string) => {
     const { data, error } = await supabase.rpc('create_invite', { p_company: id, p_role: 'admin' });
     if (error) { setMsg(error.message); return; }
-    setLinks((l) => ({ ...l, [id]: `${window.location.origin}/?invite=${data}` }));
+    setLinks((l) => ({ ...l, [id]: `${appUrl()}/?invite=${data}` }));
   };
   const when = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No activity yet');
   return (
@@ -805,7 +807,7 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
   const forgot = async () => {
     if (!email.trim()) { setMsg('Enter your email above first.'); return; }
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: appUrl() });
     setMsg(error ? error.message : 'Check your email for a reset link.');
   };
   return (
