@@ -1,20 +1,21 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { LifeBuoy, ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
 import MeasureTool from './measure';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'supportall' | 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
-type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
+type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string; support_mode?: 'platform' | 'company'; support_email?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; switching?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; switching?: string; helpFrom?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
+const Beta = () => <span className="betatag">BETA</span>;
 // Links we create (invites, password resets) use the public address, never the hosting address.
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || window.location.origin).replace(/\/$/, '');
 const ADMIN_SUB = ['catalog', 'kits', 'packing', 'porders', 'inbox', 'messages', 'setup', 'team', 'brand', 'platform', 'companies'];
@@ -66,7 +67,7 @@ export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
   const stRef = useRef<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
-  const [signedCount, setSignedCount] = useState(0);
+  const [signedCount, setSignedCount] = useState(0), [openTickets, setOpenTickets] = useState(0);
   const recovering = useRef(false);
   const [welcomeOpen, setWelcomeOpen] = useState(true);
   const [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
@@ -215,6 +216,10 @@ export default function App() {
   }, [st.uid, st.online, st.jobs]); // eslint-disable-line
   useEffect(() => { try { setWelcomeOpen(localStorage.getItem('sws-welcome-' + (st.companyId || '')) !== '1'); } catch {} }, [st.companyId]);
   useEffect(() => {
+    if (st.screen !== 'admin' || !st.uid || !st.dev) return;
+    supabase.rpc('all_tickets').then(({ data }) => setOpenTickets(((data as any[]) || []).filter((x) => x.status === 'open').length));
+  }, [st.screen, st.uid, st.dev]);
+  useEffect(() => {
     if (st.screen !== 'admin' || !st.uid || st.role !== 'admin') return;
     supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('status', 'signed').gte('signed_at', new Date(Date.now() - 7 * 864e5).toISOString()).then(({ count }) => setSignedCount(count || 0));
   }, [st.screen, st.uid, st.role]);
@@ -317,7 +322,7 @@ export default function App() {
         return (
           <main>
             <header className="dark">
-              <div className="hbar"><span /><span className="hright"><span className="bell"><Bell size={22} /></span><span className="avatar">{(st.user || 'T').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span></span></div>
+              <div className="hbar"><span /><span className="hright"><Beta /><span className="bell"><Bell size={22} /></span><span className="avatar">{(st.user || 'T').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span></span></div>
               <div className="hero">
                 <div className="greet">{hi}, {first}</div>
                 <h1 className="big">Today</h1>
@@ -578,6 +583,7 @@ export default function App() {
               ...((st.companyKind === 'franchisor') ? [['Locations', 'Your franchise locations', 'locations', Building2]] : []),
               ['Connected apps', 'Housecall Pro, Angi, leads', 'integrations', Link2],
               ['Setup', `${(st.setup || []).length}/${SETUP.length} done`, 'setup', Settings],
+              ...(st.dev ? [['All support tickets', openTickets ? `${openTickets} open` : 'Nothing waiting', 'supportall', LifeBuoy]] : []),
               ...(st.dev ? [['Platform brand', 'App name, logo, colors', 'platform', Palette], ['Company brand', 'Name, logo, colors, contact', 'brand', Palette]] : []),
               ...(st.dev ? [['All companies', `${(st.companies || []).length} on the platform`, 'companies', Building2]] : []),
             ] as [string, string, Screen, any][]).map(([t, sub, to, Ic]) => (
@@ -656,7 +662,14 @@ export default function App() {
           {!Object.values(st.jobs).some((d) => d.ordered) && <div className="muted">No partner orders yet.</div>}
         </Page>
       )}
-      {st.screen === 'help' && <HelpScreen role={st.role} user={st.user || ''} back={() => go('jobs')} onSend={(t) => { if (st.uid && st.companyId) supabase.from('tickets').insert({ company_id: st.companyId, author_id: st.uid, topic: t.topic, routed_to: t.to, body: t.text, urgent: t.urgent }).then(({ error }) => { if (error) console.warn('ticket sync failed', error.message); }); setSt((x) => ({ ...x, tickets: [...(x.tickets || []), { ...t, id: (x.tickets || []).length + 1, from: x.user || '' }] })); }} />}
+      {st.screen === 'help' && <HelpScreen role={st.role} user={st.user || ''} mode={plat.support_mode} from={st.helpFrom || ''} company={coName} back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} onSend={async (t) => {
+        if (!st.uid || !st.companyId) return 'Please sign in to send a message.';
+        const { data, error } = await supabase.from('tickets').insert({ company_id: st.companyId, author_id: st.uid, topic: t.topic, routed_to: t.to, body: t.text, urgent: t.urgent, screenshot: t.screenshot || null }).select('id').single();
+        if (error) return /bug_needs_proof/.test(error.message) ? 'A bug report needs a screenshot and a short description of what went wrong.' : 'It did not send. Check your signal and try again.';
+        if (data?.id) supabase.functions.invoke('support-notify', { body: { ticket_id: data.id } });
+        setSt((x) => ({ ...x, tickets: [...(x.tickets || []), { id: data?.id || 0, topic: t.topic, to: t.to, text: t.text, urgent: t.urgent, from: x.user || '' }] }));
+        return '';
+      }} />}
       {st.screen === 'inbox' && (
         <Page title="Support inbox" sub="Routed by topic" back={() => go('admin')}>
           {(st.tickets || []).map((t) => <div key={t.id} className="card"><div className="between"><b>#{t.id} {t.topic}</b>{t.urgent && <span className="chip" style={{ background: '#fde8e8', color: '#b42318' }}>Urgent</span>}</div><div className="muted">{t.from} → {t.to}</div><div>{t.text}</div></div>)}
@@ -706,6 +719,7 @@ export default function App() {
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
+      {st.screen === 'supportall' && st.dev && <SupportAll back={() => go('admin')} />}
       {st.screen === 'newpass' && <NewPassword onDone={async () => { recovering.current = false; const { data } = await supabase.auth.getSession(); if (data.session) await loadRef.current(data.session, true); else go('login'); }} />}
       {st.screen === 'signedlist' && <SignedList notify={st.notifyEmail || ''} onNotify={(v) => setSt((x) => ({ ...x, notifyEmail: v }))} back={() => go('admin')} />}
       {st.screen === 'phonesetup' && (
@@ -734,7 +748,7 @@ export default function App() {
         <PendingScreen user={st.user || ''} err={(st as any).inviteErr} dev={!!st.dev} onSignOut={signOut} startCode={st.pendingCode}
           onRedeem={async (code, name) => { const { error } = await supabase.rpc('redeem_invite', { p_code: code, p_company_name: name || null }); if (error) return error.message; const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); return ''; }} />
       )}
-      {showTabs && <TabBar screen={st.screen} admin={st.role === 'admin'} canSwitch={!!st.dev || (st.companies || []).length > 1} go={(x) => go(x)} onMe={signOut} />}
+      {showTabs && <TabBar screen={st.screen} admin={st.role === 'admin'} canSwitch={!!st.dev || (st.companies || []).length > 1} go={(x) => go(x, x === 'help' ? { helpFrom: hashOf(st.screen, st.jobId, st.sec) } : {})} onMe={signOut} />}
       <footer>Powered by<img src="/pdm-logo.png" alt="Performance Digital Marketing" /></footer>
     </div>
     </HomeCtx.Provider>
@@ -743,18 +757,61 @@ export default function App() {
 
 const SETUP = ['Company and brand', 'Assistant name', 'Users', 'Programs', 'Pricing', 'Rules', 'Lead source', 'Financing and deposit', 'Integrations'];
 const EVENTS = ['New job assigned', 'Proposal signed', 'Partner order placed', 'Order ready for pickup', 'Support ticket reply'];
-const TOPICS: [string, string][] = [['Install, plumbing or water question', 'Matt (master plumber)'], ['Order, billing or account', 'SWS office'], ['App bug or feature idea', 'Platform (Mike)']];
+const MIKE = 'Mike, who is setting this up with you';
+const BUG = 'Something went wrong (bug)', IDEA = 'Feature idea';
+const TOPIC_LIST = ['Using the app', 'Install, plumbing or water question', 'Order, billing or account', BUG, IDEA];
+const TOPIC_LABEL: Record<string, string> = { [BUG]: 'Something went wrong', [IDEA]: 'I have an idea' };
 
-function HelpScreen({ role, user, back, onSend }: { role?: string; user: string; back: () => void; onSend: (t: { topic: string; to: string; text: string; urgent: boolean }) => void }) {
-  const [topic, setTopic] = useState(0), [text, setText] = useState(''), [urgent, setUrgent] = useState(false), [sent, setSent] = useState(false);
+function HelpScreen({ role, user, mode, from, company, back, onSend }: { role?: string; user: string; mode?: string; from: string; company: string; back: () => void; onSend: (t: { topic: string; to: string; text: string; urgent: boolean; screenshot?: string }) => Promise<string> }) {
+  const [topic, setTopic] = useState(TOPIC_LIST[0]), [text, setText] = useState(''), [urgent, setUrgent] = useState(false), [shot, setShot] = useState(''), [busy, setBusy] = useState(false), [msg, setMsg] = useState(''), [sent, setSent] = useState(false);
+  const bug = topic === BUG;
+  const dest = bug || topic === IDEA ? 'Mike, the app\'s developer' : mode === 'company' ? 'your company\'s owner' : MIKE;
+  const ready = bug ? text.trim().length >= 20 && !!shot : text.trim().length > 0;
+  const takeShot = (file?: File) => {
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1100 / img.width), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+      setShot(c.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = URL.createObjectURL(file);
+  };
+  const send = async () => {
+    setBusy(true); setMsg('');
+    const details = bug ? `\n\n— Details sent with this report —\nPage: ${from || 'unknown'}\nCompany: ${company}\nPhone: ${navigator.userAgent}\nScreen: ${window.innerWidth}x${window.innerHeight}\nOnline: ${navigator.onLine ? 'yes' : 'no'}\nTime: ${new Date().toString()}` : '';
+    const err = await onSend({ topic, to: dest, text: text.trim() + details, urgent, screenshot: bug ? shot : undefined });
+    setBusy(false);
+    if (err) setMsg(err); else setSent(true);
+  };
+  if (sent) return (
+    <Page root title="Thank you" kicker="Help and support" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
+      <div className="okmsg"><b>Sent.</b> {bug ? 'Mike has your report and the screenshot.' : 'Your message is on its way.'} Replies come to the email you signed up with.</div>
+      <button className="btn" onClick={() => { setSent(false); setText(''); setShot(''); setUrgent(false); }}>Send another</button>
+    </Page>
+  );
   return (
-    <Page root title="Help and support" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
-      <div className="pills">{TOPICS.map(([t], i) => <button key={t} className={topic === i ? 'on' : ''} onClick={() => setTopic(i)}>{t}</button>)}</div>
-      <div className="muted">Goes to: {TOPICS[topic][1]}</div>
-      <textarea className="in" rows={4} placeholder="What do you need help with?" value={text} onChange={(e) => setText(e.target.value)} />
-      <label className="check"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />Urgent</label>
-      <button className="btn" disabled={!text.trim() || sent} onClick={() => { onSend({ topic: TOPICS[topic][0], to: TOPICS[topic][1], text, urgent }); setSent(true); }}>{sent ? 'Sent ✓' : 'Send'}</button>
-      <div className="muted">Safety: for gas, electrical or backflow issues, call a licensed plumber or SWS.</div>
+    <Page root title="Help and support" kicker="Beta version" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
+      <div className="pills">{TOPIC_LIST.map((t) => <button key={t} className={topic === t ? 'on' : ''} onClick={() => { setTopic(t); setMsg(''); }}>{TOPIC_LABEL[t] || t}</button>)}</div>
+      <div className="muted">Goes to: {dest}. Replies come to the email you signed up with.</div>
+      {bug && <div className="warn">This app is in beta, so thank you for reporting this. We need a screenshot and a note about what went wrong so we can fix it fast.</div>}
+      <div className="field"><label className="lbl">{bug ? 'What went wrong?' : topic === IDEA ? 'What would make this better?' : 'How can we help?'}{bug && <span className="req">Required</span>}</label>
+        <textarea className="in" rows={bug ? 5 : 4} placeholder={bug ? 'What were you doing? What did you tap? What did you expect, and what happened instead?' : 'Type here'} value={text} onChange={(e) => setText(e.target.value)} />
+        {bug && <div className="muted">{text.trim().length < 20 ? `${Math.max(0, 20 - text.trim().length)} more characters, please` : 'Thank you, that helps.'}</div>}</div>
+      {bug && (
+        <div className="field"><label className="lbl">Screenshot<span className="req">Required</span></label>
+          {shot && <img className="thumb" src={shot} alt="Your screenshot" />}
+          <label className="btn ghost filebtn"><input type="file" accept="image/*" hidden onChange={(e) => takeShot(e.target.files?.[0])} />{shot ? 'Choose a different screenshot' : 'Attach your screenshot'}</label>
+          {shot && <button className="link left" onClick={() => setShot('')}>Remove it</button>}
+          {!shot && <div className="card"><b>How to take a screenshot</b><div className="muted">iPhone: press the side button and the volume-up button together.<br />Android: press the power button and the volume-down button together.<br />Then come back here and tap "Attach your screenshot".</div></div>}
+          <div className="muted">We also send the page you were on, your phone type and the time. You do not need to type those.</div>
+        </div>
+      )}
+      <label className="check"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />This is urgent</label>
+      {msg && <div className="err">{msg}</div>}
+      <button className="btn" disabled={!ready || busy} onClick={send}>{busy ? 'Sending…' : bug ? 'Send the bug report' : 'Send'}</button>
+      <div className="muted">Safety: for gas, electrical or backflow problems, call a licensed plumber.</div>
     </Page>
   );
 }
@@ -787,6 +844,39 @@ function secDone(v: Vals, id: string) {
 }
 
 type Prop = { token: string; customer_name: string | null; customer_email: string | null; status: string; created_at: string; signed_at: string | null; signed_name: string | null; snapshot: { option?: string; total?: number } };
+
+type Tk = { has_screenshot?: boolean; id: number; created_at: string; status: string; topic: string; body: string; urgent: boolean; company: string; author_email: string | null; author_name: string | null };
+
+function SupportAll({ back }: { back: () => void }) {
+  const [rows, setRows] = useState<Tk[] | null>(null), [err, setErr] = useState('');
+  const load = () => supabase.rpc('all_tickets').then(({ data, error }) => { if (error) setErr(error.message); else setRows((data as Tk[]) || []); });
+  useEffect(() => { load(); }, []);
+  const [pics, setPics] = useState<Record<number, string>>({});
+  const showPic = async (id: number) => { if (pics[id]) { setPics((p) => { const n = { ...p }; delete n[id]; return n; }); return; } const { data } = await supabase.rpc('ticket_screenshot', { p_id: id }); if (data) setPics((p) => ({ ...p, [id]: data as string })); };
+  const mark = async (id: number, status: 'open' | 'done') => { const { error } = await supabase.rpc('set_ticket_status', { p_id: id, p_status: status }); if (error) setErr(error.message); else load(); };
+  const when = (d: string) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const open = (rows || []).filter((r) => r.status === 'open'), done = (rows || []).filter((r) => r.status !== 'open');
+  const card = (r: Tk) => (
+    <div key={r.id} className="card"><div className="between"><b>{r.author_name || r.author_email || 'Someone'}</b>{r.urgent && r.status === 'open' ? <span className="chip" style={{ background: '#fde8e8', color: '#b42318' }}>Urgent</span> : <span className="chip">{r.status === 'open' ? 'Open' : 'Done'}</span>}</div>
+      <div className="muted">{r.company} · {r.topic} · {when(r.created_at)}</div>
+      <div style={{ whiteSpace: 'pre-wrap' }}>{r.body}</div>
+      {pics[r.id] && <img className="thumb" src={pics[r.id]} alt="Screenshot" style={{ maxHeight: 'none' }} />}
+      <div className="btnrow wrap">
+        {r.has_screenshot && <button className="btn ghost sm" onClick={() => showPic(r.id)}>{pics[r.id] ? 'Hide screenshot' : 'View screenshot'}</button>}
+        {r.author_email && <a className="btn ghost sm" href={`mailto:${r.author_email}?subject=${encodeURIComponent('Re: ' + r.topic)}&body=${encodeURIComponent('Hi ' + (r.author_name || '') + ',\n\n')}`}>Reply by email</a>}
+        <button className="btn ghost sm" onClick={() => mark(r.id, r.status === 'open' ? 'done' : 'open')}>{r.status === 'open' ? 'Mark done' : 'Reopen'}</button>
+      </div></div>
+  );
+  return (
+    <Page title="All support tickets" kicker="Developer" sub="Help requests from every company land here." back={back} backLabel="Home">
+      {err && <div className="err">{err}</div>}
+      {rows === null && !err && <div className="muted">Loading…</div>}
+      {rows && !rows.length && <div className="muted">Nothing yet. New requests appear here.</div>}
+      {open.length > 0 && <h3>Open</h3>}{open.map(card)}
+      {done.length > 0 && <h3>Done</h3>}{done.map(card)}
+    </Page>
+  );
+}
 
 function NewPassword({ onDone }: { onDone: () => void }) {
   const [a, setA] = useState(''), [b, setB] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
@@ -957,6 +1047,13 @@ function PlatformScreen({ plat, me, back, onSave }: { plat: Plat; me?: string; b
         <div className="field"><label className="lbl">Header color</label><input className="in colorin" type="color" value={p.dark || '#0b2a5c'} onChange={(e) => { setP({ ...p, dark: e.target.value }); setMsg(''); }} /></div>
       </div>
       <div className="muted">Each company can override all of this under Company &amp; brand. The home-screen icon and install name are fixed in the app's files.</div>
+      <h3>Where support requests go</h3>
+      <div className="pills">
+        <button className={(p.support_mode || 'platform') === 'platform' ? 'on' : ''} onClick={() => { setP({ ...p, support_mode: 'platform' }); setMsg(''); }}>Testing: everything to me</button>
+        <button className={p.support_mode === 'company' ? 'on' : ''} onClick={() => { setP({ ...p, support_mode: 'company' }); setMsg(''); }}>Live: to each business owner</button>
+      </div>
+      {f('support_email', 'My support email (bugs and ideas always come here)', 'you@example.com')}
+      <div className="muted">When live, questions go to the owner of the company they came from. Bug reports and feature ideas always come to the email above.</div>
       <h3>Platform team</h3>
       <div className="muted">Developers can see and manage every company, create companies, invite owners and change the platform brand.</div>
       <div className="group" style={{ margin: '0 -20px' }}>
@@ -1146,7 +1243,7 @@ function Page({ title, sub, back, backLabel, right, kicker, segs, light, root, g
       <header className="dark">
         <div className="hbar">
           {back ? <button className="backbtn" onClick={back}><ChevronLeft size={20} strokeWidth={2.5} />{backLabel || 'Back'}</button> : <span />}
-          <span className="hright">{right}{goHome && !root && <button className="homebtn" onClick={goHome}><House size={18} />Home</button>}</span>
+          <span className="hright"><Beta />{right}{goHome && !root && <button className="homebtn" onClick={goHome}><House size={18} />Home</button>}</span>
         </div>
         {segs && <div className="segs">{Array.from({ length: segs.n }, (_, k) => <i key={k} className={k < segs.i ? 'done' : k === segs.i ? 'cur' : ''} />)}</div>}
         {!light && <div className="hero">{head}</div>}
@@ -1184,6 +1281,7 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
   return (
     <main className="loginwrap">
       <header className="loginhero">
+        <Beta />
         {brand ? (brand.logo ? <img src={brand.logo} alt={brand.name} className="herologo" /> : <b className="herotext">{brand.name}</b>) : plat.logo ? <img src={plat.logo} alt={plat.app_name} className="herologo" /> : <b className="herotext">{plat.app_name || 'Soft Water Specialists'}</b>}
         <div>
           <h1>{brand?.tagline || plat.tagline || 'Sign in to your account'}</h1>

@@ -295,3 +295,6 @@ img{max-width:100%}
 .welcome{width:100%;background:var(--a100);border:1px solid var(--a300);border-left:4px solid var(--accent);padding:14px 16px;display:flex;flex-direction:column;gap:8px;font-size:15px}
 .welcome ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:2px}
 .welcome li{line-height:1.4}.welcome .link{min-height:32px;padding:0;font-weight:800}
+
+.betatag{font-size:10px;font-weight:800;letter-spacing:.14em;border:1px solid rgba(255,255,255,.6);color:#fff;padding:2px 6px;line-height:1.4;align-self:center}
+.loginhero .betatag{position:absolute;top:18px;right:20px}.loginhero{position:relative}
