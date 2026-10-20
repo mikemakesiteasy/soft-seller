@@ -48,6 +48,8 @@ const blank = (j: Meta, flow: 'full' | 'quick' = 'full'): JobData => ({
 export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
+  const stRef = useRef<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
+  stRef.current = st;
   const remoteSettings = useRef<Record<string, any>>({});
   const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
   const [loginBrand, setLoginBrand] = useState<(Brand & { name: string }) | null>(null);
@@ -77,7 +79,13 @@ export default function App() {
     window.addEventListener('online', on); window.addEventListener('offline', on);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', on); };
   }, []);
-  useEffect(() => { if (ready) try { localStorage.setItem(KEY, JSON.stringify(st)); } catch {} }, [st, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    const save = () => { try { localStorage.setItem(KEY, JSON.stringify(stRef.current)); } catch {} };
+    const t = setTimeout(save, 400);
+    window.addEventListener('pagehide', save); document.addEventListener('visibilitychange', save);
+    return () => { clearTimeout(t); window.removeEventListener('pagehide', save); document.removeEventListener('visibilitychange', save); };
+  }, [st, ready]);
   useEffect(() => {
     if (!ready) return;
     const handle = async (session: any, home = false) => {
@@ -148,8 +156,6 @@ export default function App() {
     }, 1000);
     return () => clearTimeout(t);
   }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
-  const stRef = useRef(st);
-  stRef.current = st;
   useEffect(() => {
     if (!ready) return;
     const h = hashOf(st.screen, st.jobId, st.sec);
@@ -294,7 +300,7 @@ export default function App() {
         const blocked = s2.id === 'sB' && !jd.values['sB.bp'] && !jd.values['sB.bpLater'];
         const nx = flowSecs[idx + 1];
         return (
-          <Page title={<><span className="hnum">{s2.n}</span> {s2.title}</>} kicker={`${GROUP_OF[s2.id]} · ${idx + 1} of ${flowSecs.length}`} segs={{ n: flowSecs.length, i: idx }} back={() => go('overview')} backLabel="Sections" right={<span>{job.name}</span>}>
+          <Page grid title={<><span className="hnum">{s2.n}</span> {s2.title}</>} kicker={`${GROUP_OF[s2.id]} · ${idx + 1} of ${flowSecs.length}`} segs={{ n: flowSecs.length, i: idx }} back={() => go('overview')} backLabel="Sections" right={<span>{job.name}</span>}>
             {s2.fields.filter((f) => !f.show || f.show(jd.values)).map((f) => (
               <FieldView key={f.id} sid={s2.id} f={f} v={jd.values} set={setVal} />
             ))}
@@ -703,6 +709,7 @@ function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; 
   const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean; company_id: string | null }[]>([]);
   const roles: [string, string][] = [['admin', 'Admin / owner'], ['tech', 'Technician (employee)'], ['plumber', 'Plumbing partner'], ['dealer', 'Authorized dealer']].filter(([k]) => !(isDev && (k === 'tech' || k === 'plumber'))) as [string, string][];
   const mine = companies.filter((c) => isDev || c.role === 'admin');
+  const [working, setWorking] = useState(false);
   const [role, setRole] = useState(roles[0][0]), [msg, setMsg] = useState(''), [picked, setPicked] = useState<string[]>([companyId]), [fresh, setFresh] = useState<{ code: string; names: string } | null>(null);
   const load = async () => {
     const { data: m } = await supabase.from('memberships').select('user_id,role').eq('company_id', companyId);
@@ -716,11 +723,12 @@ function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; 
   useEffect(() => { load(); }, [companyId]); // eslint-disable-line
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const make = async () => {
-    setMsg('');
+    setMsg(''); setWorking(true);
     const chosen = picked.length ? picked : [companyId];
     const first = chosen.includes(companyId) ? companyId : chosen[0];
     const extra = chosen.filter((x) => x !== first);
     const { data, error } = await supabase.rpc('create_invite', { p_company: first, p_role: role, p_extra: extra });
+    setWorking(false);
     if (error) { setMsg(error.message); return; }
     const slug = companies.find((c) => c.id === first)?.slug;
     setFresh({ code: data, names: chosen.map((id) => companies.find((c) => c.id === id)?.name).filter(Boolean).join(' and ') + (slug ? '' : '') });
@@ -737,7 +745,7 @@ function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; 
       {mine.length > 1 && <h3>2. Which companies?</h3>}
       {mine.length > 1 && <div className="pills">{mine.map((c) => <button key={c.id} className={picked.includes(c.id) ? 'on' : ''} onClick={() => toggle(c.id)}>{c.name}</button>)}</div>}
       <h3>{mine.length > 1 ? '3.' : '2.'} Make the link</h3>
-      <button className="btn" onClick={make}>Create invite link</button>
+      <button className="btn" disabled={working} onClick={make}>{working ? 'Making your link…' : 'Create invite link'}</button>
       {msg && <div className="err">{msg}</div>}
       {fresh && <ShareLink url={link(fresh.code)} company={fresh.names} label={`Invite to ${fresh.names}`} />}
       <h3>Invite another company</h3>
@@ -944,7 +952,7 @@ function PendingScreen({ user, err, dev, startCode, onRedeem, onSignOut }: { use
   );
 }
 
-function Page({ title, sub, back, backLabel, right, kicker, segs, light, root, children }: { root?: boolean; title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
+function Page({ title, sub, back, backLabel, right, kicker, segs, light, root, grid, children }: { grid?: boolean; root?: boolean; title: React.ReactNode; sub?: string; back?: () => void; backLabel?: string; right?: React.ReactNode; kicker?: string; segs?: { n: number; i: number }; light?: boolean; children: React.ReactNode }) {
   const goHome = useContext(HomeCtx);
   const head = (
     <>
@@ -964,7 +972,7 @@ function Page({ title, sub, back, backLabel, right, kicker, segs, light, root, c
         {!light && <div className="hero">{head}</div>}
       </header>
       {light && <div className="lighthero">{head}</div>}
-      <div className="body">{children}</div>
+      <div className={'body' + (grid ? ' grid' : '')}>{children}</div>
     </main>
   );
 }
@@ -1004,7 +1012,7 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
       <div className="body loginbody">
         <div className="field"><label className="lbl">Email</label><input className="in" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
         <div className="field"><label className="lbl">Password</label><input className="in" type="password" placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && email && pw.length >= 6 && run('in')} /></div>
-        <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>Sign in</button>
+        <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>{busy ? 'Signing in…' : 'Sign in'}</button>
         {msg && <div className={msg.startsWith('Check') ? 'okmsg' : 'err'}>{msg}</div>}
         <button className="link left" onClick={forgot}>Forgot password?</button>
         <button className="link left" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create an account</button>

@@ -44,9 +44,9 @@ header.dark{background:var(--navy9);color:#fff;padding:0 20px 20px}
 .lighthero .sub{color:var(--n600);margin-top:6px}
 
 .body{padding:16px 20px 24px;display:flex;flex-direction:column;gap:14px;flex:1}
-.body:has(.half){flex-direction:row;flex-wrap:wrap;gap:16px 16px;align-content:flex-start}
-.body:has(.half)>*{width:100%}
-.body:has(.half)>.half{width:calc(50% - 8px)}
+.body.grid{flex-direction:row;flex-wrap:wrap;gap:16px 16px;align-content:flex-start}
+.body.grid>*{width:100%}
+.body.grid>.half{width:calc(50% - 8px)}
 .jobsbody{background:var(--surface);gap:12px;padding-top:16px}
 
 /* job cards */
@@ -157,8 +157,8 @@ footer{display:flex;flex-direction:column;align-items:center;gap:6px}footer img{
 :root{--shadow:0 1px 2px rgba(13,37,80,.08),0 8px 20px -10px rgba(13,37,80,.22);--shadow-up:0 1px 2px rgba(13,37,80,.1),0 14px 28px -12px rgba(13,37,80,.3);--ease:cubic-bezier(.2,.7,.2,1)}
 html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 body{font-feature-settings:'tnum' 1,'cv11' 1}
-@keyframes screenin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-main{animation:screenin .22s var(--ease) both}
+@keyframes screenin{from{opacity:.55}to{opacity:1}}
+main{animation:screenin .08s linear both}
 header.dark{background:linear-gradient(180deg,var(--navy9) 0%,var(--navy8) 100%);position:relative}
 header.dark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--accent),#3d8ee0 60%,transparent)}
 .loginhero::after{display:none}
@@ -181,8 +181,8 @@ header.dark::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2
 .seg button{transition:background .18s,color .18s}
 .bar i{transition:width .45s var(--ease);background:linear-gradient(90deg,var(--accent),#3d8ee0)}
 .segs i{transition:background .25s}
-.actions{background:rgba(247,249,252,.86);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px)}
-.tabbar{background:rgba(247,249,252,.86);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px)}
+.actions{background:var(--bg)}
+.tabbar{background:var(--bg)}
 .tabbar button{position:relative;transition:color .15s}
 .tabbar .on::before{content:'';position:absolute;top:-1px;left:25%;right:25%;height:3px;background:var(--accent)}
 .tabbar button svg{transition:transform .18s var(--ease)}.tabbar .on svg{transform:translateY(-1px) scale(1.08)}
@@ -207,3 +207,23 @@ h1.big{background:linear-gradient(180deg,#fff,#cfe0f7);-webkit-background-clip:t
 .setupbar .xbtn{background:none;border:0;color:#fff;font-size:18px;width:40px;height:40px}
 .steps{margin:6px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .btnrow.wrap{flex-wrap:wrap}.btnrow a.btn{text-decoration:none}
+
+/* ---- speed pass ---- */
+button,a,label,input,select,textarea{touch-action:manipulation}
+.btn,.row,.jobcard,.tile,.pills button,.seg button,.tabbar button,.card{transition:none}
+.btn:active{background:var(--a700);transform:none}
+.btn.ghost:active{background:rgba(13,37,80,.14)}
+.row:active,.jobcard:active,.tile:active,.card.tier:active{background:var(--a200);transform:none}
+.pills button:active{background:var(--a200);transform:none}
+.tabbar button:active{background:var(--a100)}
+.row:hover{padding-left:20px}
+@media (hover:hover){
+  .jobcard,.tile,.card.tier,.btn,.row{transition:transform .12s ease-out,box-shadow .12s ease-out,background .1s}
+  .jobcard:hover,.tile:hover,.card.tier:hover{transform:translateY(-2px);box-shadow:var(--shadow-up)}
+  .row:hover{background:var(--a100)}
+}
+@media (hover:none){
+  .jobcard:hover,.tile:hover,.card.tier:hover{transform:none;box-shadow:var(--shadow)}
+  .btn:not(.ghost):not(:disabled){box-shadow:none}
+  .btn:not(.ghost):not(.sm):hover::after{transform:none}
+}
