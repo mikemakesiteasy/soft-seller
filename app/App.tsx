@@ -1,12 +1,12 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
 import MeasureTool from './measure';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
@@ -67,6 +67,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const stRef = useRef<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [signedCount, setSignedCount] = useState(0);
+  const recovering = useRef(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(true);
   const [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   stRef.current = st;
   const remoteSettings = useRef<Record<string, any>>({});
@@ -149,7 +151,7 @@ export default function App() {
     };
     loadRef.current = handle;
     supabase.auth.getSession().then(({ data }) => handle(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_IN') handle(session); });
+    const { data: sub } = supabase.auth.onAuthStateChange((ev, session) => { if (ev === 'PASSWORD_RECOVERY') { recovering.current = true; setSt((x) => ({ ...x, screen: 'newpass' })); return; } if (ev === 'SIGNED_IN' && !recovering.current) handle(session); });
     return () => sub.subscription.unsubscribe();
   }, [ready]);
   useEffect(() => {
@@ -211,6 +213,7 @@ export default function App() {
       } catch {}
     });
   }, [st.uid, st.online, st.jobs]); // eslint-disable-line
+  useEffect(() => { try { setWelcomeOpen(localStorage.getItem('sws-welcome-' + (st.companyId || '')) !== '1'); } catch {} }, [st.companyId]);
   useEffect(() => {
     if (st.screen !== 'admin' || !st.uid || st.role !== 'admin') return;
     supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('status', 'signed').gte('signed_at', new Date(Date.now() - 7 * 864e5).toISOString()).then(({ count }) => setSignedCount(count || 0));
@@ -328,7 +331,7 @@ export default function App() {
               <button className="btn ghost" onClick={() => go('newjob')}>New job</button>
               {!jobList.length && (
                 <div className="card"><b>No jobs yet.</b><div className="muted">Add your first job to start an evaluation.</div>
-                  {st.dev && <button className="btn ghost" onClick={() => setSt((x) => ({ ...x, jobs: { ...x.jobs, ...Object.fromEntries(JOBS.map((j) => [j.id, blank(j)])) } }))}>Add sample jobs</button>}</div>
+                  {(st.dev || st.role === 'admin') && <button className="btn ghost" onClick={() => setSt((x) => ({ ...x, jobs: { ...x.jobs, ...Object.fromEntries(JOBS.map((j) => [j.id, blank(j)])) } }))}>Add practice jobs to try the app</button>}</div>
               )}
               {jobList.map((j) => {
                 const d = st.jobs[j.id];
@@ -551,6 +554,18 @@ export default function App() {
             )}
           </div>
           <div className="body tiles">
+            {welcomeOpen && st.role === 'admin' && !st.dev && (
+              <div className="welcome">
+                <b>Welcome{st.user ? ', ' + st.user.split(' ')[0] : ''}. Here is the quickest way to get going:</b>
+                <ol>
+                  <li><button className="link left" onClick={() => go('catalog')}>Check your prices</button><span className="muted"> and tick the box that says they are correct</span></li>
+                  <li><button className="link left" onClick={() => go('integrations')}>Connect your email</button><span className="muted"> so signed proposals can be sent</span></li>
+                  <li><button className="link left" onClick={() => go('team')}>Invite your team</button><span className="muted"> technicians, dealers, partners</span></li>
+                  <li><button className="link left" onClick={() => go('jobs')}>Try a practice job</button><span className="muted"> from the water test to a signed proposal</span></li>
+                </ol>
+                <button className="link left" onClick={() => { setWelcomeOpen(false); try { localStorage.setItem('sws-welcome-' + (st.companyId || ''), '1'); } catch {} }}>Hide this</button>
+              </div>
+            )}
             {([
               ['Signed proposals', signedCount ? `${signedCount} signed this week` : 'Who has signed', 'signedlist', FileCheck],
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
@@ -691,6 +706,7 @@ export default function App() {
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
+      {st.screen === 'newpass' && <NewPassword onDone={async () => { recovering.current = false; const { data } = await supabase.auth.getSession(); if (data.session) await loadRef.current(data.session, true); else go('login'); }} />}
       {st.screen === 'signedlist' && <SignedList notify={st.notifyEmail || ''} onNotify={(v) => setSt((x) => ({ ...x, notifyEmail: v }))} back={() => go('admin')} />}
       {st.screen === 'phonesetup' && (
         <Page title="Put the app on your phone" kicker="Takes one minute" sub="It then opens like any other app, full screen, with its own icon." back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} backLabel="Back">
@@ -771,6 +787,20 @@ function secDone(v: Vals, id: string) {
 }
 
 type Prop = { token: string; customer_name: string | null; customer_email: string | null; status: string; created_at: string; signed_at: string | null; signed_name: string | null; snapshot: { option?: string; total?: number } };
+
+function NewPassword({ onDone }: { onDone: () => void }) {
+  const [a, setA] = useState(''), [b, setB] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const bad = a.length < 8 ? 'Use at least 8 characters.' : a !== b ? 'The two passwords are not the same.' : '';
+  return (
+    <Page root title="Choose a new password" kicker="Almost done" sub="You will use this to sign in from now on.">
+      <div className="field"><label className="lbl">New password</label><input className="in" type="password" autoComplete="new-password" value={a} onChange={(e) => setA(e.target.value)} /></div>
+      <div className="field"><label className="lbl">Type it again</label><input className="in" type="password" autoComplete="new-password" value={b} onChange={(e) => setB(e.target.value)} /></div>
+      {(a || b) && bad && <div className="muted">{bad}</div>}
+      {msg && <div className="err">{msg}</div>}
+      <button className="btn" disabled={!!bad || busy} onClick={async () => { setBusy(true); setMsg(''); const { error } = await supabase.auth.updateUser({ password: a }); setBusy(false); if (error) setMsg(error.message); else onDone(); }}>{busy ? 'Saving…' : 'Save my new password'}</button>
+    </Page>
+  );
+}
 
 function SignedList({ notify, onNotify, back }: { notify: string; onNotify: (v: string) => void; back: () => void }) {
   const [rows, setRows] = useState<Prop[] | null>(null), [copied, setCopied] = useState('');
@@ -1131,6 +1161,7 @@ function TabBar({ screen, admin, canSwitch, go, onMe }: { screen: string; admin:
   const homeKey = admin ? 'admin' : 'jobs', active = ADMIN_SUB.includes(screen) ? 'admin' : screen;
   const tabs = [
     { k: homeKey, l: admin ? 'Home' : 'Jobs', I: House, on: () => go(homeKey as Screen) },
+    ...(admin ? [{ k: 'jobs', l: 'Jobs', I: ClipboardList, on: () => go('jobs') }] : []),
     { k: 'help', l: 'Help', I: CircleHelp, on: () => go('help') },
     ...(canSwitch ? [{ k: 'switch', l: 'Switch', I: Repeat, on: () => go('switch') }] : []),
     { k: 'me', l: 'Sign out', I: User, on: onMe },
@@ -1163,6 +1194,7 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
         <div className="field"><label className="lbl">Email</label><input className="in" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} inputMode="email" autoCapitalize="none" /></div>
         <div className="field"><label className="lbl">Password</label><input className="in" type="password" placeholder="••••••••" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && email && pw.length >= 6 && run('in')} /></div>
         <button className="btn" disabled={busy || !email || pw.length < 6} onClick={() => run('in')}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        {!msg && email && pw.length > 0 && pw.length < 6 && <div className="muted">Your password needs at least 6 characters.</div>}
         {msg && <div className={msg.startsWith('Check') ? 'okmsg' : 'err'}>{msg}</div>}
         <button className="link left" onClick={forgot}>Forgot password?</button>
         <button className="link left" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create an account</button>
