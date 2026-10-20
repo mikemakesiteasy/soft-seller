@@ -227,3 +227,4 @@ button,a,label,input,select,textarea{touch-action:manipulation}
   .btn:not(.ghost):not(:disabled){box-shadow:none}
   .btn:not(.ghost):not(.sm):hover::after{transform:none}
 }
+.warn{background:#fff4d6;color:#7a5a00;padding:10px 12px;font-weight:600;font-size:14px}

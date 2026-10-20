@@ -14,6 +14,7 @@ export const CATALOG = [
   { sku: 'BYP-1', name: 'Bypass valve kit, 1"', cost: 48, msrp: 95 },
   { sku: 'EXP-2', name: 'Expansion tank, 2 gal', cost: 62, msrp: 125 },
   { sku: 'KIT-INST', name: 'Install kit (fittings, drain line)', cost: 85, msrp: 165 },
+  { sku: 'LABOR', name: 'Installation labor', cost: 300, msrp: 650 },
   { sku: 'FIT-1', name: '1" fitting kit', cost: 38, msrp: 75 },
   { sku: 'FIT-34', name: '3/4" fitting kit', cost: 32, msrp: 65 },
   { sku: 'PEX-AD', name: 'PEX adapter set', cost: 24, msrp: 48 },
@@ -184,7 +185,7 @@ export function tiers(v: Vals) {
   const mains = Object.keys(out).filter((s) => CAT[s]);
   const base = (mains.length ? mains : ['Z-1']).slice();
   const sum = (skus: string[]) => skus.reduce((t, s) => t + (CAT[s]?.msrp || 0), 0);
-  const install = CAT['KIT-INST'].msrp;
+  const install = CAT['KIT-INST'].msrp + (CAT['LABOR']?.msrp || 0);
   const better = base.filter((s) => ['Z-1', 'Z-2', 'IRON', 'NEUT', 'SYM-2'].includes(s));
   const betterSet = better.length ? better.slice(0, 1) : base.slice(0, 1);
   const bestSet = base;

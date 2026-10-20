@@ -9,8 +9,8 @@ type Meta = { id: string; name: string; address: string; city: string; state: st
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
-type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 // Links we create (invites, password resets) use the public address, never the hosting address.
@@ -124,7 +124,7 @@ export default function App() {
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
+        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -148,14 +148,14 @@ export default function App() {
     const t = setTimeout(() => {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
-      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy }).filter(([, v]) => v !== undefined)) };
+      const next = { ...remoteSettings.current, ...Object.fromEntries(Object.entries({ kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed }).filter(([, v]) => v !== undefined)) };
       if (JSON.stringify(next) !== JSON.stringify(remoteSettings.current)) {
         remoteSettings.current = next;
         supabase.from('companies').update({ settings: next }).eq('id', st.companyId!).then(({ error }) => { if (error) console.warn('settings sync failed', error.message); });
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.uid, st.companyId, st.role]);
   useEffect(() => {
     if (!ready) return;
     const h = hashOf(st.screen, st.jobId, st.sec);
@@ -180,7 +180,7 @@ export default function App() {
   }, [st.uid, st.brand, loginBrand, plat]);
   useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, tickets: undefined, jobId: undefined })); };
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
   const coName = st.companyName || 'Soft Water Specialists';
   Object.keys(CAT).forEach((k) => { if (!DEFAULT_CAT[k]) delete CAT[k]; else Object.assign(CAT[k], DEFAULT_CAT[k]); });
@@ -198,8 +198,9 @@ export default function App() {
   const jobList: Meta[] = st.uid ? ownJobs : [...JOBS, ...ownJobs.filter((m) => !JOBS.some((j) => j.id === m.id))];
   const job = st.jobId ? metaOf(st.jobId) : undefined;
   const jd = job ? st.jobs[job.id] || blank(job) : undefined;
-  const patch = (p: Partial<JobData>) => job && jd && setSt((s) => ({ ...s, jobs: { ...s.jobs, [job.id]: { ...jd, ...p } } }));
-  const setVal = (k: string, val: any) => jd && patch({ values: { ...jd.values, [k]: val } });
+  // Always merge into the newest saved copy, so quick back-to-back changes never overwrite each other.
+  const patch = (p: Partial<JobData>) => job && jd && setSt((s) => ({ ...s, jobs: { ...s.jobs, [job.id]: { ...(s.jobs[job.id] || jd), ...p } } }));
+  const setVal = (k: string, val: any) => job && jd && setSt((s) => { const cur = s.jobs[job.id] || jd; return { ...s, jobs: { ...s.jobs, [job.id]: { ...cur, values: { ...cur.values, [k]: val } } } }; });
   const flowSecs = jd ? (jd.flow === 'quick' ? SECS.filter((s) => QUICK.includes(s.id)) : SECS) : SECS;
 
   return (
@@ -245,7 +246,7 @@ export default function App() {
                   <button key={j.id} className="jobcard" onClick={() => go('overview', { jobId: j.id, jobs: { ...st.jobs, [j.id]: d || blank(j, isPartner ? 'quick' : 'full') } })}>
                     <div className="time"><b>{t}</b><span>{ap}</span></div>
                     <div className="grow"><b className="nm">{j.name}</b><div className="addr">{j.address}, {j.city}</div><div className="why">{j.reason}</div>
-                      <div className="tags">{d && <span className="tag">{done === 100 ? 'Complete' : 'In progress'}</span>}<span className="jid">{j.id}</span></div></div>
+                      <div className="tags">{d && <span className="tag">{d.completed ? 'Complete' : 'In progress'}</span>}<span className="jid">{j.id}</span></div></div>
                     <ChevronRight size={20} />
                   </button>
                 );
@@ -297,14 +298,15 @@ export default function App() {
       {st.screen === 'section' && job && jd && (() => {
         const idx = Math.min(st.sec, flowSecs.length - 1), s2 = flowSecs[idx];
         const last = idx >= flowSecs.length - 1;
-        const blocked = s2.id === 'sB' && !jd.values['sB.bp'] && !jd.values['sB.bpLater'];
+        const needLead = s2.id === 's1' && !jd.values['s1.first'];
+        const blocked = (s2.id === 'sB' && !jd.values['sB.bp'] && !jd.values['sB.bpLater']) || needLead;
         const nx = flowSecs[idx + 1];
         return (
           <Page grid title={<><span className="hnum">{s2.n}</span> {s2.title}</>} kicker={`${GROUP_OF[s2.id]} · ${idx + 1} of ${flowSecs.length}`} segs={{ n: flowSecs.length, i: idx }} back={() => go('overview')} backLabel="Sections" right={<span>{job.name}</span>}>
             {s2.fields.filter((f) => !f.show || f.show(jd.values)).map((f) => (
               <FieldView key={f.id} sid={s2.id} f={f} v={jd.values} set={setVal} />
             ))}
-            {blocked && <div className="err">A before photo is required to continue. Take one, or check “taken on phone camera”.</div>}
+            {blocked && <div className="err">{needLead ? 'Please ask: where did they first hear about us? Pick an answer to continue.' : 'A before photo is required to continue. Take one, or check “taken on phone camera”.'}</div>}
             <div className="actions row2">
               {idx > 0 && <button className="btn ghost sq" aria-label="Previous" onClick={() => go('section', { sec: idx - 1 })}><ChevronLeft size={20} /></button>}
               <button className="btn" disabled={blocked} onClick={() => (last ? go('overview') : go('section', { sec: idx + 1 }))}>{last ? 'Finish' : `Next: ${nx.n} ${nx.title}`}</button>
@@ -317,6 +319,7 @@ export default function App() {
         const none = !Object.keys(recommend(jd.values).out).length;
         return (
           <Page title="Your water plan" kicker={`Prepared for ${job.name} by ${coName}`} back={() => go('overview')} backLabel="Technician view">
+            {!st.pricesConfirmed && <div className="warn">Estimated prices. The owner has not confirmed the price list yet, so do not quote these to a real customer.</div>}
             {none && <div className="err">Enter water test results first so a recommendation can be built.</div>}
             {ts.map((t) => (
               <button key={t.name} className={'card tier ' + (pick === t.name ? 'best' : '')} onClick={() => patch({ choice: t.name })}>
@@ -340,6 +343,7 @@ export default function App() {
         const dep = Math.round(t.total * 0.1);
         return (
           <Page title={`${t.name} option`} kicker={`Proposal · ${job.name}`} sub={t.sub} back={() => go('present')} backLabel="Options">
+            {!st.pricesConfirmed && <div className="warn">Estimated prices. The owner has not confirmed the price list yet, so do not quote these to a real customer.</div>}
             <div className="plist">
               {t.skus.map((x) => <div key={x}>{CAT[x].name}</div>)}<div>Installation materials</div>
               <div className="between"><span>Investment</span><b>{money(t.total)}</b></div>
@@ -350,7 +354,18 @@ export default function App() {
             <FieldView sid="s14" f={SECS.find((s) => s.id === 's14')!.fields[1]} v={jd.values} set={setVal} />
             <label className="check"><input type="checkbox" checked={!!jd.deposit} onChange={(e) => patch({ deposit: e.target.checked })} />Card deposit collected (payment provider not connected yet)</label>
             <div className="actions">
-              <button className="btn ghost" onClick={() => patch({ sent: true })}>{jd.sent ? 'Proposal sent ✓' : 'Text / email proposal'}</button>
+              {(() => {
+                const phone = String(jd.values['s1.phone'] || job.phone || '').replace(/[^0-9+]/g, ''), email = String(jd.values['s1.email'] || '');
+                const ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
+                const body = `${coName}: your ${t.name} water plan\n` + t.skus.map((x) => '• ' + CAT[x].name).join('\n') + `\n• Installation\nInvestment: ${money(t.total)} (or ${money(monthly(t.total))}/mo)\nDeposit: ${money(dep)}\nQuestions? ${st.brand?.phone || ''}`;
+                return (
+                  <div className="btnrow wrap">
+                    <a className="btn ghost sm" onClick={() => patch({ sent: true })} href={`sms:${phone}${ios ? '&' : '?'}body=${encodeURIComponent(body)}`}>Text it to the customer</a>
+                    <a className="btn ghost sm" onClick={() => patch({ sent: true })} href={`mailto:${email}?subject=${encodeURIComponent(coName + ': your water plan')}&body=${encodeURIComponent(body)}`}>Email it</a>
+                    {jd.sent && <span className="muted">Message opened ✓</span>}
+                  </div>
+                );
+              })()}
               <button className="btn" disabled={!jd.values['s14.sig']} onClick={() => go('materials')}>Approve & continue</button>
             </div>
           </Page>
@@ -414,7 +429,7 @@ export default function App() {
             {need && <div className="err">After photo is required to complete the job.</div>}
             <label className="lbl">QA summary</label>
             <pre className="qa">{qa}</pre>
-            <div className="actions"><button className="btn" disabled={need} onClick={() => go('jobs')}>Complete job</button></div>
+            <div className="actions"><button className="btn" disabled={need} onClick={() => { patch({ completed: true }); go('jobs'); }}>Complete job</button></div>
           </Page>
         );
       })()}
@@ -464,6 +479,7 @@ export default function App() {
       )}
       {st.screen === 'catalog' && (
         <Page title="Products and pricing" sub="Changes apply to proposals and partner orders" back={() => go('admin')}>
+          <label className="check"><input type="checkbox" checked={!!st.pricesConfirmed} onChange={(e) => setSt((x) => ({ ...x, pricesConfirmed: e.target.checked }))} />I have checked these prices and they are correct for customer quotes</label>
           <AddProduct onAdd={(sku, name, cost, msrp) => setSt((x) => ({ ...x, prices: { ...x.prices, [sku]: { cost, msrp, name } } }))} />
           {Object.values(CAT).map((c) => (
             <div key={c.sku} className="card"><b>{c.name}</b><div className="muted">{c.sku}</div>
