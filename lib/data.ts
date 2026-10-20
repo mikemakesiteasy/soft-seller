@@ -60,8 +60,8 @@ export const REACH_OPTS = ['Phone call', 'Web form', 'Booked online', 'Text mess
 
 // ---- Worksheet definition -------------------------------------------------
 export type Field = {
-  id: string; label: string; t: 'text' | 'area' | 'single' | 'multi' | 'yn' | 'head' | 'lead' | 'photo' | 'recs' | 'sig' | 'date';
-  opts?: string[]; unit?: string; half?: boolean; im?: string; show?: (v: Vals) => boolean;
+  id: string; label: string; t: 'text' | 'area' | 'single' | 'multi' | 'yn' | 'head' | 'lead' | 'photo' | 'recs' | 'sig' | 'date' | 'measure';
+  opts?: string[]; unit?: string; half?: boolean; im?: string; opt?: boolean; show?: (v: Vals) => boolean;
 };
 export type Section = { id: string; n: string; title: string; fields: Field[] };
 const yn = (id: string, label: string): Field => ({ id, label, t: 'yn', opts: ['Yes', 'No'] });
@@ -105,6 +105,7 @@ export const SECS: Section[] = [
     { id: 'whtype', label: 'Water heater type', t: 'single', opts: ['Tank', 'Tankless', 'Hybrid'] },
     { id: 'notes', label: 'Notes / observations', t: 'area' }] },
   { id: 's7', n: '07', title: 'Installation Space', fields: [
+    { id: 'measure', label: 'Measure', t: 'measure' },
     { id: 'h', label: 'Height available', t: 'text', half: true }, { id: 'w', label: 'Width available', t: 'text', half: true },
     { id: 'd', label: 'Depth available', t: 'text', half: true }, { id: 'door', label: 'Door width', t: 'text', half: true },
     { id: 'access', label: 'Access issues / restrictions', t: 'area' }] },
@@ -120,7 +121,7 @@ export const SECS: Section[] = [
   { id: 's14', n: '14', title: 'Approval & Signature', fields: [
     { id: 'sig', label: 'Customer signature', t: 'sig' }, { id: 'printed', label: 'Printed name', t: 'text', half: true }, { id: 'date', label: 'Date', t: 'date', half: true },
     { id: 'next', label: 'Next steps / action items', t: 'area' }] },
-  { id: 's16', n: '16', title: 'After Photo', fields: [{ id: 'ap', label: 'Finished install, after photo', t: 'photo' }] },
+  { id: 's16', n: '16', title: 'After Photo', fields: [{ id: 'ap', label: 'Finished install, after photo', t: 'photo' }, { id: 'xp', label: 'Extra photo, if you want one', t: 'photo', opt: true }] },
 ];
 export const QUICK = ['s1', 'sB', 's2', 's3', 's4', 's5', 's6', 's7'];
 

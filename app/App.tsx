@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
+import MeasureTool from './measure';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
 type Screen = 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
@@ -496,7 +497,13 @@ export default function App() {
           `Recommended: ${Object.keys(r.out).map((s) => CAT[s]?.name).join('; ') || 'n/a'}`, jd.choice ? `Approved: ${jd.choice} option` : ''].filter(Boolean).join('\n');
         return (
           <Page title="Evaluation complete" kicker={`${job.name} · ${job.id}`} sub="After photo and QA summary" back={() => go('overview')} backLabel="Sections">
-            <FieldView sid="s16" f={SECS.find((s) => s.id === 's16')!.fields[0]} v={v} set={setVal} />
+            {(v['sB.bp'] || v['s16.ap']) && (
+              <div className="ba">
+                <div><div className="muted">Before</div>{v['sB.bp'] ? <img src={v['sB.bp']} alt="Before" /> : <div className="baempty">Attach later</div>}</div>
+                <div><div className="muted">After</div>{v['s16.ap'] ? <img src={v['s16.ap']} alt="After" /> : <div className="baempty">Not taken yet</div>}</div>
+              </div>
+            )}
+            {SECS.find((s) => s.id === 's16')!.fields.map((f) => <FieldView key={f.id} sid="s16" f={f} v={v} set={setVal} />)}
             {need && <div className="err">After photo is required to complete the job.</div>}
             <label className="lbl">QA summary</label>
             <pre className="qa">{qa}</pre>
@@ -1170,13 +1177,14 @@ function FieldView({ sid, f, v, set }: { sid: string; f: Field; v: Vals; set: (k
         </div>
       );
     }
-    case 'photo': return <PhotoField k={k} v={v} set={set} label={f.label} />;
+    case 'measure': return <MeasureTool onApply={(m) => { if (m.h) set('s7.h', m.h); if (m.w) set('s7.w', m.w); if (m.d) set('s7.d', m.d); set('s7.measured', 'Yes'); set('s7.measurePhoto', m.photo); }} />;
+    case 'photo': return <PhotoField k={k} v={v} set={set} label={f.label} opt={f.opt} />;
     case 'sig': return wrap(<Sig value={val} onChange={(d) => set(k, d)} />);
   }
   return null;
 }
 
-function PhotoField({ k, v, set, label }: { k: string; v: Vals; set: (k: string, x: any) => void; label: string }) {
+function PhotoField({ k, v, set, label, opt }: { k: string; v: Vals; set: (k: string, x: any) => void; label: string; opt?: boolean }) {
   const onFile = (file?: File) => {
     if (!file) return;
     const img = new Image();
@@ -1190,10 +1198,12 @@ function PhotoField({ k, v, set, label }: { k: string; v: Vals; set: (k: string,
   };
   return (
     <div className="field">
-      <label className="lbl">{label} <span className="req">Required</span></label>
+      <label className="lbl">{label} {opt ? <span className="opt">Optional</span> : <span className="req">Required</span>}</label>
       {v[k] && <img className="thumb" src={v[k]} alt="" />}
+      {v[k] && <div className="donetag"><Check size={16} />Photo saved</div>}
       <label className="btn ghost filebtn">{v[k] ? 'Retake photo' : 'Take photo'}<input type="file" accept="image/*" capture="environment" hidden onChange={(e) => onFile(e.target.files?.[0])} /></label>
-      <label className="check"><input type="checkbox" checked={!!v[k + 'Later']} onChange={(e) => set(k + 'Later', e.target.checked)} />Taken on phone camera, attach later</label>
+      {v[k] && <button className="link left" onClick={() => set(k, '')}>Remove this photo</button>}
+      {!opt && !v[k] && <label className="check"><input type="checkbox" checked={!!v[k + 'Later']} onChange={(e) => set(k + 'Later', e.target.checked)} />Taken on phone camera, attach later</label>}
     </div>
   );
 }
