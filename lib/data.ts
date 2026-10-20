@@ -175,7 +175,15 @@ export function suggest(v: Vals): Item[] {
 }
 
 export const money = (n: number) => '$' + Math.round(n).toLocaleString();
-export const monthly = (total: number, apr = 7.99, months = 60) => {
+// The company's financing terms (set by the owner). Until they are set, these placeholder terms apply.
+export const FIN = { apr: 7.99, months: 60, show: true };
+export const setFinancing = (f?: { apr?: number; months?: number; show?: boolean }) => {
+  FIN.apr = f && f.apr != null && f.apr >= 0 ? f.apr : 7.99;
+  FIN.months = f && f.months && f.months > 0 ? f.months : 60;
+  FIN.show = f && f.show === false ? false : true;
+};
+export const monthly = (total: number, apr = FIN.apr, months = FIN.months) => {
+  if (apr <= 0) return total / months;
   const r = apr / 1200;
   return (total * r) / (1 - Math.pow(1 + r, -months));
 };

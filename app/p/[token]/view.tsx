@@ -5,7 +5,7 @@ import { Sig } from '../../sig';
 
 type Snap = {
   number?: string; date?: string; address?: string; preparedBy?: string; source?: string;
-  option?: string; sub?: string; total?: number; monthly?: number; deposit?: number;
+  option?: string; sub?: string; total?: number; monthly?: number; deposit?: number; showMonthly?: boolean; financingNote?: string;
   items?: { name: string }[]; tiers?: { name: string; sub: string; total: number; monthly: number }[];
   findings?: { label: string; value: string }[]; why?: { name: string; because: string }[];
   company?: { name?: string; phone?: string; web?: string };
@@ -91,10 +91,10 @@ export default function ProposalView({ token }: { token: string }) {
             <tbody>
               <tr className="big"><td>Total</td><td className="r">{money(s.total)}</td></tr>
               <tr><td>Deposit to schedule the work</td><td className="r">{money(s.deposit)}</td></tr>
-              <tr><td>Estimated monthly payment, if financed</td><td className="r">{money(s.monthly)}/mo</td></tr>
+              {s.showMonthly !== false && <tr><td>Estimated monthly payment, if financed</td><td className="r">{money(s.monthly)}/mo</td></tr>}
             </tbody>
           </table>
-          <p className="docfine">The monthly payment is an estimate. Final financing terms are confirmed with the lender.</p>
+          {s.showMonthly !== false && <p className="docfine">The monthly payment is an estimate{s.financingNote ? ` (${s.financingNote})` : ''}. Final financing terms are confirmed with the lender.</p>}
           {others.length > 0 && (
             <>
               <div className="cap" style={{ marginTop: 16 }}>Other options we talked about</div>

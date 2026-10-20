@@ -62,9 +62,9 @@ export function render(view: any, token: string, kind: 'link' | 'signed', owner?
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="padding:10px 0;border-bottom:2px solid ${dark};font-size:20px;font-weight:800;color:${dark}">Total</td><td align="right" style="padding:10px 0;border-bottom:2px solid ${dark};font-size:20px;font-weight:800;color:${dark}">${money(s.total)}</td></tr>
       ${row('Deposit to schedule the work', money(s.deposit))}
-      ${row('Estimated monthly payment, if financed', money(s.monthly) + '/mo')}
+      ${s.showMonthly === false ? '' : row('Estimated monthly payment, if financed', money(s.monthly) + '/mo')}
     </table>
-    <div style="font-size:12px;color:#556070;margin-top:8px">The monthly payment is an estimate. Final financing terms are confirmed with the lender.</div>
+    ${s.showMonthly === false ? '' : `<div style="font-size:12px;color:#556070;margin-top:8px">The monthly payment is an estimate${s.financingNote ? ' (' + esc(s.financingNote) + ')' : ''}. Final financing terms are confirmed with the lender.</div>`}
     ${others.length ? `<div style="margin-top:14px">${cap('Other options we talked about')}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${others.map((t: any) => row(esc(t.name) + ' <span style="color:#556070;font-weight:400">· ' + esc(t.sub) + '</span>', money(t.total))).join('')}</table>` : ''}
   </td></tr>
   ${proof}

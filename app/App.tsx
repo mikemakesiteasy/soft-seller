@@ -1,18 +1,18 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { LifeBuoy, ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { Percent, LifeBuoy, ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
 import MeasureTool from './measure';
-import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
+import { FIN, setFinancing, CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'supportall' | 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'financing' | 'supportall' | 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string; support_mode?: 'platform' | 'company'; support_email?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; switching?: string; helpFrom?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; financing?: { apr: number; months: number; show: boolean }; switching?: string; helpFrom?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 const Beta = () => <span className="betatag">BETA</span>;
@@ -51,7 +51,7 @@ const extrasOf = (values: Vals, jobId: string, address: string, preparedBy: stri
   return { number: jobId, date: new Date().toISOString(), address, preparedBy, source, findings, why };
 };
 const snapshotOf = (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, co: { name: string; phone?: string; web?: string }, extra: Record<string, any> = {}) => ({
-  appUrl: appUrl(), option: t.name, sub: t.sub, total: t.total, monthly: monthly(t.total), deposit: dep,
+  appUrl: appUrl(), option: t.name, sub: t.sub, total: t.total, monthly: monthly(t.total), showMonthly: FIN.show, financingNote: `${FIN.apr}% APR over ${FIN.months} months`, deposit: dep,
   items: [...t.skus.map((x) => ({ name: CAT[x].name })), { name: 'Installation (materials and labor)' }],
   tiers: all.map((x) => ({ name: x.name, sub: x.sub, total: x.total, monthly: monthly(x.total) })), company: co, ...extra,
 });
@@ -144,7 +144,7 @@ export default function App() {
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, switching: undefined, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
+        ...x, switching: undefined, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, financing: cfg.financing, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -169,7 +169,7 @@ export default function App() {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
       // save only the settings that really changed, so a stale copy on this phone can never erase anything else
-      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed, notifyEmail: st.notifyEmail } as Record<string, any>;
+      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed, notifyEmail: st.notifyEmail, financing: st.financing } as Record<string, any>;
       const changed = Object.fromEntries(Object.entries(mine).filter(([k, v]) => v !== undefined && JSON.stringify(v) !== JSON.stringify(remoteSettings.current[k])));
       if (Object.keys(changed).length) {
         remoteSettings.current = { ...remoteSettings.current, ...changed };
@@ -177,7 +177,7 @@ export default function App() {
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.notifyEmail, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.notifyEmail, st.financing, st.uid, st.companyId, st.role]);
   useEffect(() => {
     if (!ready) return;
     const h = hashOf(st.screen, st.jobId, st.sec);
@@ -229,7 +229,7 @@ export default function App() {
   }, [st.uid, st.brand, loginBrand, plat]);
   useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, tickets: undefined, jobId: undefined })); };
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, financing: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => {
     const target = (st.companies || []).find((c) => c.id === id);
     setSt((x) => ({ ...x, switching: target?.name || 'your company' }));
@@ -240,6 +240,7 @@ export default function App() {
   const coName = st.companyName || 'Soft Water Specialists';
   Object.keys(CAT).forEach((k) => { if (!DEFAULT_CAT[k]) delete CAT[k]; else Object.assign(CAT[k], DEFAULT_CAT[k]); });
   Object.entries(st.prices || {}).forEach(([k, p]) => { if (CAT[k]) Object.assign(CAT[k], { cost: p.cost, msrp: p.msrp }); else CAT[k] = { sku: k, name: p.name || k, cost: p.cost, msrp: p.msrp }; });
+  setFinancing(st.financing);
   Object.keys(KITS).forEach((k) => delete KITS[k]); Object.assign(KITS, JSON.parse(JSON.stringify(st.kits || DEFAULT_KITS)));
   RULES.splice(0, RULES.length, ...(st.rules || DEFAULT_RULES));
   const disc = st.disc ?? 40;
@@ -427,10 +428,10 @@ export default function App() {
                 <div className="muted">{t.sub}</div>
                 <ul>{t.skus.map((x) => <li key={x}>{CAT[x].name}</li>)}<li>Installation materials</li></ul>
                 <div className="between"><span className="muted">Investment</span><b>{money(t.total)}</b></div>
-                <div className="between"><span className="muted">Or financed</span><b>{money(monthly(t.total))}/mo</b></div>
+                {FIN.show && <div className="between"><span className="muted">Or financed</span><b>{money(monthly(t.total))}/mo</b></div>}
               </button>
             ))}
-            <div className="muted">Monthly payments are placeholders (7.99% APR, 60 months).</div>
+            {FIN.show && <div className="muted">Monthly payments are estimates ({FIN.apr}% APR over {FIN.months} months). Final terms come from the lender.</div>}
             <div className="actions">
               <button className="btn ghost">Check financing · no credit impact</button>
               <button className="btn" onClick={() => go('proposal')}>Continue with {pick}</button>
@@ -452,7 +453,7 @@ export default function App() {
             <div className="plist">
               {t.skus.map((x) => <div key={x}>{CAT[x].name}</div>)}<div>Installation (materials and labor)</div>
               <div className="between"><span>Investment</span><b>{money(t.total)}</b></div>
-              <div className="between"><span>Or financed</span><b>{money(monthly(t.total))}/mo</b></div>
+              {FIN.show && <div className="between"><span>Or financed</span><b>{money(monthly(t.total))}/mo</b></div>}
               <div className="between"><span>Deposit (10%, placeholder)</span><b>{money(dep)}</b></div>
             </div>
             <div className="field"><label className="lbl">Customer email (so their copy can be sent)</label><input className="in" type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setVal('s1.email', e.target.value)} placeholder="name@example.com" /></div>
@@ -572,6 +573,7 @@ export default function App() {
               </div>
             )}
             {([
+              ['Financing', FIN.show ? `${FIN.apr}% · ${FIN.months} months` : 'Hidden from customers', 'financing', Percent],
               ['Signed proposals', signedCount ? `${signedCount} signed this week` : 'Who has signed', 'signedlist', FileCheck],
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
               ['Support inbox', `${(st.tickets || []).length} open`, 'inbox', Headphones],
@@ -719,6 +721,7 @@ export default function App() {
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
+      {st.screen === 'financing' && <FinancingScreen value={st.financing} onChange={(f) => setSt((x) => ({ ...x, financing: f }))} back={() => go('admin')} />}
       {st.screen === 'supportall' && st.dev && <SupportAll back={() => go('admin')} />}
       {st.screen === 'newpass' && <NewPassword onDone={async () => { recovering.current = false; const { data } = await supabase.auth.getSession(); if (data.session) await loadRef.current(data.session, true); else go('login'); }} />}
       {st.screen === 'signedlist' && <SignedList notify={st.notifyEmail || ''} onNotify={(v) => setSt((x) => ({ ...x, notifyEmail: v }))} back={() => go('admin')} />}
@@ -846,6 +849,24 @@ function secDone(v: Vals, id: string) {
 type Prop = { token: string; customer_name: string | null; customer_email: string | null; status: string; created_at: string; signed_at: string | null; signed_name: string | null; snapshot: { option?: string; total?: number } };
 
 type Tk = { has_screenshot?: boolean; id: number; created_at: string; status: string; topic: string; body: string; urgent: boolean; company: string; author_email: string | null; author_name: string | null };
+
+function FinancingScreen({ value, onChange, back }: { value?: { apr: number; months: number; show: boolean }; onChange: (f: { apr: number; months: number; show: boolean }) => void; back: () => void }) {
+  const v = { apr: value?.apr ?? FIN.apr, months: value?.months ?? FIN.months, show: value?.show ?? true };
+  const [apr, setApr] = useState(String(v.apr));
+  const example = 4000, mo = (a: number, m: number) => (a <= 0 ? example / m : (example * (a / 1200)) / (1 - Math.pow(1 + a / 1200, -m)));
+  return (
+    <Page title="Financing" kicker="Monthly payments on quotes" sub="What customers see as their estimated monthly payment." back={back} backLabel="Home">
+      <label className="check"><input type="checkbox" checked={v.show} onChange={(e) => onChange({ ...v, show: e.target.checked })} />Show an estimated monthly payment to customers</label>
+      <div className="muted">Turn this off until you have a real lender, so customers are never shown a number you have not agreed to.</div>
+      <div className="field"><label className="lbl">Interest rate (APR, %)</label>
+        <input className="in" inputMode="decimal" value={apr} onChange={(e) => { setApr(e.target.value); const n = parseFloat(e.target.value); if (!isNaN(n) && n >= 0 && n <= 40) onChange({ ...v, apr: n }); }} /></div>
+      <div className="field"><label className="lbl">Length of the loan</label>
+        <div className="pills">{[36, 48, 60, 72, 84, 120].map((m) => <button key={m} className={v.months === m ? 'on' : ''} onClick={() => onChange({ ...v, months: m })}>{m} months</button>)}</div></div>
+      <div className="card"><b>Example</b><div>A $4,000 plan at {v.apr}% over {v.months} months is about <b>{money(mo(v.apr, v.months))}</b> a month.</div></div>
+      <div className="muted">These are estimates only. A real application and final terms come from your lender.</div>
+    </Page>
+  );
+}
 
 function SupportAll({ back }: { back: () => void }) {
   const [rows, setRows] = useState<Tk[] | null>(null), [err, setErr] = useState('');
