@@ -952,7 +952,7 @@ function TabBar({ screen, admin, canSwitch, go, onMe }: { screen: string; admin:
 }
 
 function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & { name: string }) | null; onLogin: (u: string, role: 'tech' | 'plumber' | 'admin') => void; onAuth: (email: string, pw: string, mode: 'in' | 'up') => Promise<string> }) {
-  const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [guest, setGuest] = useState(false);
+  const [email, setEmail] = useState(''), [pw, setPw] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   const run = async (mode: 'in' | 'up') => { setBusy(true); setMsg(''); setMsg(await onAuth(email.trim(), pw, mode)); setBusy(false); };
   const forgot = async () => {
     if (!email.trim()) { setMsg('Enter your email above first.'); return; }
@@ -975,11 +975,6 @@ function Login({ onLogin, onAuth, brand, plat }: { plat: Plat; brand: (Brand & {
         {msg && <div className={msg.startsWith('Check') ? 'okmsg' : 'err'}>{msg}</div>}
         <button className="link left" onClick={forgot}>Forgot password?</button>
         <button className="link left" disabled={busy || !email || pw.length < 6} onClick={() => run('up')}>Create an account</button>
-        <div className="guestbox">
-          <button className="btn ghost" onClick={() => setGuest(!guest)}>Look around as a guest</button>
-          {guest && <div className="pills"><button onClick={() => onLogin('Technician', 'tech')}>Technician</button><button onClick={() => onLogin('Ortiz Plumbing & Heating', 'plumber')}>Plumber</button><button onClick={() => onLogin('Admin', 'admin')}>Admin</button></div>}
-          <span className="muted">No sign-in needed. Sample data only, not saved to the cloud.</span>
-        </div>
       </div>
     </main>
   );
