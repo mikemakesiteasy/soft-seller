@@ -12,7 +12,7 @@ type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; co
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; switching?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 // Links we create (invites, password resets) use the public address, never the hosting address.
@@ -70,7 +70,7 @@ export default function App() {
   const [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   stRef.current = st;
   const remoteSettings = useRef<Record<string, any>>({});
-  const loadRef = useRef<(session: any, home?: boolean) => Promise<void>>(async () => {});
+  const loadRef = useRef<(session: any, home?: boolean, switchTo?: string) => Promise<void>>(async () => {});
   const [loginBrand, setLoginBrand] = useState<(Brand & { name: string }) | null>(null);
   const [plat, setPlat] = useState<Plat>({});
   const installEvt = useRef<any>(null);
@@ -85,7 +85,7 @@ export default function App() {
     return () => { window.removeEventListener('beforeinstallprompt', onPrompt); window.removeEventListener('appinstalled', onInstalled); };
   }, []);
   useEffect(() => {
-    try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), online: navigator.onLine }); } catch {}
+    try { const s = localStorage.getItem(KEY); if (s) setSt({ ...JSON.parse(s), switching: undefined, online: navigator.onLine }); } catch {}
     try {
       const q = new URLSearchParams(window.location.search);
       const inv = q.get('invite'), co = q.get('co');
@@ -107,7 +107,7 @@ export default function App() {
   }, [st, ready]);
   useEffect(() => {
     if (!ready) return;
-    const handle = async (session: any, home = false) => {
+    const handle = async (session: any, home = false, switchTo?: string) => {
       if (!session) return;
       const email = session.user.email as string, uid = session.user.id as string;
       let inviteErr = '';
@@ -119,31 +119,29 @@ export default function App() {
         if (info?.new_company) pendingCode = inv;
         else { const { error } = await supabase.rpc('redeem_invite', { p_code: inv }); if (error) inviteErr = error.message; }
       }
-      const { data: prof } = await supabase.from('profiles').select('display_name,is_developer,active_company_id').maybeSingle();
-      const { data: mem } = await supabase.from('memberships').select('company_id,role');
-      const { data: cos } = await supabase.from('companies').select('id,name,slug,kind,parent_id,settings').order('name');
-      const roleOf: Record<string, string> = Object.fromEntries((mem || []).map((m: any) => [m.company_id, m.role]));
-      const companies: Co[] = (cos || []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, role: roleOf[c.id] || 'admin', brand: c.settings?.brand || {}, kind: c.kind, parent_id: c.parent_id }));
-      let active: string | undefined = prof?.active_company_id || undefined;
-      if (!companies.find((c) => c.id === active)) { active = companies[0]?.id; if (active) await supabase.rpc('set_active_company', { p_company: active }); }
-      if (!active) { setSt((x) => ({ ...x, screen: 'pending', user: prof?.display_name || email, uid, companyId: undefined, companies: [], dev: !!prof?.is_developer, inviteErr, pendingCode })); return; }
+      // everything in ONE request (profile, companies, settings, brand, prices, jobs, tickets)
+      const { data: b, error: bErr } = await supabase.rpc('load_bundle', { p_company: switchTo || null });
+      if (bErr || !b) {
+        // no signal, or the change was refused: stay exactly where we were
+        setSt((x) => ({ ...x, switching: undefined }));
+        if (switchTo) alert(bErr?.message || 'Could not switch company. Check your signal and try again.');
+        return;
+      }
+      const prof = { display_name: b.display_name as string | null, is_developer: !!b.is_developer };
+      const companies: Co[] = (b.companies || []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, role: c.role, brand: c.brand || {}, kind: c.kind, parent_id: c.parent_id }));
+      const active: string | undefined = b.active || undefined;
+      if (!active) { setSt((x) => ({ ...x, switching: undefined, screen: 'pending', user: prof.display_name || email, uid, companyId: undefined, companies: [], dev: prof.is_developer, inviteErr, pendingCode })); return; }
       const co = companies.find((c) => c.id === active)!;
-      const [{ data: rows }, { data: cat }, { data: cfgRow }, { data: tk }, { data: effBrand }] = await Promise.all([
-        supabase.from('jobs').select('id,data'),
-        supabase.from('catalog_items').select('sku,name,cost,msrp'),
-        supabase.from('companies').select('settings').eq('id', active).maybeSingle(),
-        supabase.from('tickets').select('id,topic,routed_to,body,urgent,author_id'),
-        supabase.rpc('effective_brand', { p_company: active }),
-      ]);
-      remoteSettings.current = cfgRow?.settings || {};
+      remoteSettings.current = b.settings || {};
       const cfg = remoteSettings.current;
-      const prices = Object.fromEntries((cat || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp), name: c.name }]));
-      const tickets = (tk || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === uid ? email : 'Team member' }));
-      const remote: Record<string, JobData> = Object.fromEntries((rows || []).map((r: any) => [r.id, r.data]));
+      const effBrand = b.brand;
+      const prices = Object.fromEntries((b.catalog || []).map((c: any) => [c.sku, { cost: Number(c.cost), msrp: Number(c.msrp), name: c.name }]));
+      const tickets = (b.tickets || []).map((t: any) => ({ id: t.id, topic: t.topic, to: t.routed_to, text: t.body, urgent: t.urgent, from: t.author_id === uid ? email : 'Team member' }));
+      const remote: Record<string, JobData> = Object.fromEntries((b.jobs || []).map((r: any) => [r.id, r.data]));
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
+        ...x, switching: undefined, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -224,7 +222,13 @@ export default function App() {
   useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
   const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, tickets: undefined, jobId: undefined })); };
-  const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
+  const switchCompany = async (id: string) => {
+    const target = (st.companies || []).find((c) => c.id === id);
+    setSt((x) => ({ ...x, switching: target?.name || 'your company' }));
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) { setSt((x) => ({ ...x, switching: undefined })); alert('Your sign-in expired. Please sign in again.'); return; }
+    await loadRef.current(data.session, true, id);
+  };
   const coName = st.companyName || 'Soft Water Specialists';
   Object.keys(CAT).forEach((k) => { if (!DEFAULT_CAT[k]) delete CAT[k]; else Object.assign(CAT[k], DEFAULT_CAT[k]); });
   Object.entries(st.prices || {}).forEach(([k, p]) => { if (CAT[k]) Object.assign(CAT[k], { cost: p.cost, msrp: p.msrp }); else CAT[k] = { sku: k, name: p.name || k, cost: p.cost, msrp: p.msrp }; });
@@ -300,6 +304,7 @@ export default function App() {
           <button className="xbtn" aria-label="Dismiss" onClick={() => { setBarOpen(false); try { localStorage.setItem('sws-phone-bar', '1'); } catch {} }}>✕</button>
         </div>
       )}
+      {st.switching && <div className="veil" role="status" aria-live="polite"><span className="spin" />Switching to {st.switching}…</div>}
       {!st.online && <div className="offline">Offline. Your work is saved on this device and will sync when signal returns.</div>}
       {st.screen === 'login' && <Login brand={loginBrand} plat={plat} onAuth={async (email, pw, mode) => { const r = mode === 'in' ? await supabase.auth.signInWithPassword({ email, password: pw }) : await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: appUrl() } }); const em = r.error?.message || ''; if (/not confirmed/i.test(em)) return 'Check your email: tap the link in the message we sent, then come back here and tap Sign in.'; return em || (mode === 'up' && !r.data.session ? 'Check your email and tap the link inside. If the page that opens looks broken, that is fine. Come back here and tap Sign in.' : ''); }} onLogin={(u, role) => go(role === 'admin' ? 'admin' : 'jobs', { user: u, role })} />}
       {st.screen === 'jobs' && (() => {
