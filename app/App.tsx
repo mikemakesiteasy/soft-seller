@@ -582,7 +582,7 @@ export default function App() {
           <div className="actions"><button className="btn ghost" onClick={() => { setBarOpen(false); try { localStorage.setItem('sws-phone-bar', '1'); } catch {} go(st.role === 'admin' ? 'admin' : 'jobs'); }}>Done, hide the reminder</button></div>
         </Page>
       )}
-      {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} isDev={!!st.dev} back={() => go('admin')} />}
+      {st.screen === 'team' && st.companyId && <TeamScreen companyId={st.companyId} companies={st.companies || []} isDev={!!st.dev} back={() => go('admin')} />}
       {st.screen === 'locations' && st.companyId && <LocationsScreen back={() => go('admin')} />}
       {st.screen === 'integrations' && st.companyId && <IntegrationsScreen back={() => go('admin')} />}
       {st.screen === 'brand' && st.companyId && st.dev && (
@@ -680,38 +680,71 @@ function NewJob({ back, onCreate }: { back: () => void; onCreate: (m: Meta) => v
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', tech: 'Technician', plumber: 'Plumbing partner', dealer: 'Authorized dealer', diy: 'DIY homeowner', franchisor: 'Franchise HQ' };
 
-function TeamScreen({ companyId, isDev, back }: { companyId: string; isDev: boolean; back: () => void }) {
+function ShareLink({ url, company, label }: { url: string; company: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const msg = `You're invited to join ${company}. Tap this link to get started: ${url}`;
+  const canShare = typeof navigator !== 'undefined' && !!(navigator as any).share;
+  return (
+    <div className="card">
+      <b>{label || 'Invite link ready'}</b>
+      <div className="muted" style={{ wordBreak: 'break-all' }}>{url}</div>
+      <div className="btnrow wrap">
+        {canShare && <button className="btn sm" onClick={() => (navigator as any).share({ title: company, text: msg, url }).catch(() => {})}>Share</button>}
+        <a className="btn ghost sm" href={`sms:?&body=${encodeURIComponent(msg)}`}>Text it</a>
+        <a className="btn ghost sm" href={`mailto:?subject=${encodeURIComponent('Your invite to ' + company)}&body=${encodeURIComponent(msg)}`}>Email it</a>
+        <button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); }}>{copied ? 'Copied ✓' : 'Copy'}</button>
+      </div>
+    </div>
+  );
+}
+
+function TeamScreen({ companyId, companies, isDev, back }: { companyId: string; companies: Co[]; isDev: boolean; back: () => void }) {
   const [members, setMembers] = useState<{ user_id: string; role: string; name: string }[]>([]);
-  const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean }[]>([]);
+  const [invites, setInvites] = useState<{ code: string; role: string; new_company: boolean; company_id: string | null }[]>([]);
   const roles: [string, string][] = [['admin', 'Admin / owner'], ['tech', 'Technician (employee)'], ['plumber', 'Plumbing partner'], ['dealer', 'Authorized dealer']].filter(([k]) => !(isDev && (k === 'tech' || k === 'plumber'))) as [string, string][];
-  const [role, setRole] = useState(roles[0][0]), [msg, setMsg] = useState(''), [copied, setCopied] = useState('');
+  const mine = companies.filter((c) => isDev || c.role === 'admin');
+  const [role, setRole] = useState(roles[0][0]), [msg, setMsg] = useState(''), [picked, setPicked] = useState<string[]>([companyId]), [fresh, setFresh] = useState<{ code: string; names: string } | null>(null);
   const load = async () => {
     const { data: m } = await supabase.from('memberships').select('user_id,role').eq('company_id', companyId);
     const ids = (m || []).map((x: any) => x.user_id);
     const { data: pr } = ids.length ? await supabase.from('profiles').select('user_id,display_name,email').in('user_id', ids) : { data: [] as any[] };
     const nm: Record<string, string> = Object.fromEntries((pr || []).map((x: any) => [x.user_id, x.email || x.display_name || 'Member']));
     setMembers((m || []).map((x: any) => ({ user_id: x.user_id, role: x.role, name: nm[x.user_id] || 'Member' })));
-    const { data: iv } = await supabase.from('invites').select('code,role,new_company').or(`company_id.eq.${companyId},source_company.eq.${companyId}`).is('used_at', null).gt('expires_at', new Date().toISOString());
+    const { data: iv } = await supabase.from('invites').select('code,role,new_company,company_id').or(`company_id.eq.${companyId},source_company.eq.${companyId}`).is('used_at', null).gt('expires_at', new Date().toISOString());
     setInvites(iv || []);
   };
   useEffect(() => { load(); }, [companyId]); // eslint-disable-line
-  const make = async () => { setMsg(''); const { error } = await supabase.rpc('create_invite', { p_company: companyId, p_role: role }); if (error) setMsg(error.message); else load(); };
-  const makeCompany = async () => { setMsg(''); const { error } = await supabase.rpc('create_company_invite', { p_company: companyId }); if (error) setMsg(error.message); else load(); };
-  const link = (c: string) => `${appUrl()}/?invite=${c}`;
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const make = async () => {
+    setMsg('');
+    const chosen = picked.length ? picked : [companyId];
+    const first = chosen.includes(companyId) ? companyId : chosen[0];
+    const extra = chosen.filter((x) => x !== first);
+    const { data, error } = await supabase.rpc('create_invite', { p_company: first, p_role: role, p_extra: extra });
+    if (error) { setMsg(error.message); return; }
+    const slug = companies.find((c) => c.id === first)?.slug;
+    setFresh({ code: data, names: chosen.map((id) => companies.find((c) => c.id === id)?.name).filter(Boolean).join(' and ') + (slug ? '' : '') });
+    load();
+  };
+  const makeCompany = async () => { setMsg(''); const { data, error } = await supabase.rpc('create_company_invite', { p_company: companyId }); if (error) setMsg(error.message); else { setFresh({ code: data, names: 'the app with their own company' }); load(); } };
+  const slug = companies.find((c) => c.id === companyId)?.slug;
+  const link = (c: string) => `${appUrl()}/?${slug ? 'co=' + slug + '&' : ''}invite=${c}`;
   return (
-    <Page title="Team" kicker="Employees, dealers and companies" back={back} backLabel="Home">
-      <h3>Invite a person to this company</h3>
+    <Page title="Invite someone" kicker="Employees, dealers and companies" back={back} backLabel="Home">
+      <h3>1. Who are they?</h3>
       <div className="pills">{roles.map(([k, l]) => <button key={k} className={role === k ? 'on' : ''} onClick={() => setRole(k)}>{l}</button>)}</div>
-      <button className="btn" onClick={make}>Create invite link</button>
       {isDev && <div className="muted">Technicians and plumbers are added by each company's own admin.</div>}
+      {mine.length > 1 && <h3>2. Which companies?</h3>}
+      {mine.length > 1 && <div className="pills">{mine.map((c) => <button key={c.id} className={picked.includes(c.id) ? 'on' : ''} onClick={() => toggle(c.id)}>{c.name}</button>)}</div>}
+      <h3>{mine.length > 1 ? '3.' : '2.'} Make the link</h3>
+      <button className="btn" onClick={make}>Create invite link</button>
+      {msg && <div className="err">{msg}</div>}
+      {fresh && <ShareLink url={link(fresh.code)} company={fresh.names} label={`Invite to ${fresh.names}`} />}
       <h3>Invite another company</h3>
       <div className="muted">They get their own company in the app, with their own team and customers. You are not able to see their jobs.</div>
       <button className="btn ghost" onClick={makeCompany}>Create company invite link</button>
-      {msg && <div className="err">{msg}</div>}
-      {invites.map((i) => (
-        <div key={i.code} className="card"><b>{i.new_company ? 'Company invite' : (ROLE_LABEL[i.role] || i.role) + ' invite'}</b><div className="muted" style={{ wordBreak: 'break-all' }}>{link(i.code)}</div>
-          <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(link(i.code)); setCopied(i.code); }}>{copied === i.code ? 'Copied ✓' : 'Copy link'}</button></div>
-      ))}
+      {invites.length > 0 && <h3>Links not used yet</h3>}
+      {invites.map((i) => <ShareLink key={i.code} url={link(i.code)} company={companies.find((c) => c.id === i.company_id)?.name || 'the app'} label={i.new_company ? 'Company invite' : (ROLE_LABEL[i.role] || i.role) + ' invite'} />)}
       <div className="muted">Each link works once and expires in 14 days.</div>
       <h3>Members</h3>
       <div className="group" style={{ margin: '0 -20px' }}>{members.map((m) => <div key={m.user_id} className="row static"><span className="grow">{m.name}</span><span className="tag">{ROLE_LABEL[m.role] || m.role}</span></div>)}</div>
@@ -798,7 +831,7 @@ function CompaniesScreen({ list, active, back, onEnter, onCreate }: { list: Co[]
           <div className="muted">{c.slug ? `Login link: /?co=${c.slug}` : 'No login link'}</div>
           <div>{c.admins.length ? <>Owner: <b>{c.admins.join(', ')}</b></> : <b>No owner yet</b>}</div>
           <div className="muted">{c.members} {c.members === 1 ? 'person' : 'people'} · {c.jobs} jobs · {c.tickets} tickets · {when(c.last_activity)}</div>
-          {links[c.id] && <div className="okmsg" style={{ wordBreak: 'break-all' }}>{links[c.id]}</div>}
+          {links[c.id] && <ShareLink url={links[c.id]} company={c.name} label="Owner invite ready" />}
           <div className="btnrow">
             {c.id !== active && <button className="btn ghost sm" onClick={() => onEnter(c.id)}>Open</button>}
             <button className="btn ghost sm" onClick={() => (links[c.id] ? (navigator.clipboard?.writeText(links[c.id]), setCopied(c.id)) : invite(c.id))}>{links[c.id] ? (copied === c.id ? 'Copied ✓' : 'Copy link') : 'Invite owner'}</button>
@@ -834,7 +867,7 @@ function LocationsScreen({ back }: { back: () => void }) {
         <div key={c.id} className="card"><h3>{c.name}</h3>
           <div>{c.admins.length ? <>Owner: <b>{c.admins.join(', ')}</b></> : <b>No owner yet</b>}</div>
           <div className="muted">{c.members} {c.members === 1 ? 'person' : 'people'} · {c.jobs} jobs · {when(c.last_activity)}</div>
-          {links[c.id] && <div className="okmsg" style={{ wordBreak: 'break-all' }}>{links[c.id]}</div>}
+          {links[c.id] && <ShareLink url={links[c.id]} company={c.name} label="Owner invite ready" />}
           <button className="btn ghost sm" onClick={() => (links[c.id] ? (navigator.clipboard?.writeText(links[c.id]), setCopied(c.id)) : invite(c.id))}>{links[c.id] ? (copied === c.id ? 'Copied ✓' : 'Copy link') : 'Invite owner'}</button>
         </div>
       ))}
