@@ -1,0 +1,6 @@
+# Anyone who opens the hosting address is sent to the real one, so "netlify" is never shown.
+[[redirects]]
+  from = "https://soft-seller.netlify.app/*"
+  to = "https://app.thesoftwaterspecialists.com/:splat"
+  status = 301
+  force = true
