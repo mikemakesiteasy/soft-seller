@@ -1,18 +1,18 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Percent, LifeBuoy, ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { Sparkles, Percent, LifeBuoy, ClipboardList, FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
 import MeasureTool from './measure';
 import { FIN, setFinancing, CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'financing' | 'supportall' | 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'buddy' | 'financing' | 'supportall' | 'newpass' | 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string; support_mode?: 'platform' | 'company'; support_email?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; financing?: { apr: number; months: number; show: boolean }; switching?: string; helpFrom?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; assistantName?: string; financing?: { apr: number; months: number; show: boolean }; switching?: string; helpFrom?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 const Beta = () => <span className="betatag">BETA</span>;
@@ -144,7 +144,7 @@ export default function App() {
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, switching: undefined, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, financing: cfg.financing, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
+        ...x, switching: undefined, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, assistantName: cfg.assistantName, financing: cfg.financing, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -169,7 +169,7 @@ export default function App() {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
       // save only the settings that really changed, so a stale copy on this phone can never erase anything else
-      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed, notifyEmail: st.notifyEmail, financing: st.financing } as Record<string, any>;
+      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed, notifyEmail: st.notifyEmail, assistantName: st.assistantName, financing: st.financing } as Record<string, any>;
       const changed = Object.fromEntries(Object.entries(mine).filter(([k, v]) => v !== undefined && JSON.stringify(v) !== JSON.stringify(remoteSettings.current[k])));
       if (Object.keys(changed).length) {
         remoteSettings.current = { ...remoteSettings.current, ...changed };
@@ -177,7 +177,7 @@ export default function App() {
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.notifyEmail, st.financing, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.notifyEmail, st.assistantName, st.financing, st.uid, st.companyId, st.role]);
   useEffect(() => {
     if (!ready) return;
     const h = hashOf(st.screen, st.jobId, st.sec);
@@ -229,7 +229,7 @@ export default function App() {
   }, [st.uid, st.brand, loginBrand, plat]);
   useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, financing: undefined, tickets: undefined, jobId: undefined })); };
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, assistantName: undefined, financing: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => {
     const target = (st.companies || []).find((c) => c.id === id);
     setSt((x) => ({ ...x, switching: target?.name || 'your company' }));
@@ -391,7 +391,8 @@ export default function App() {
             })}
             <div className="actions">
               <button className="btn" onClick={() => go('section', { sec: nextI })}>Continue: {flowSecs[nextI].n} {flowSecs[nextI].title}</button>
-              <div className="btnrow"><button className="btn ghost" onClick={() => go('present')}>Present options</button><button className="btn ghost" onClick={() => go('materials')}>Job materials</button></div>
+              <div className="btnrow"><button className="btn ghost" onClick={() => go('buddy')}><Sparkles size={16} />Ask {(st.assistantName || '').trim() || 'Buddy'} about this job</button></div>
+            <div className="btnrow"><button className="btn ghost" onClick={() => go('present')}>Present options</button><button className="btn ghost" onClick={() => go('materials')}>Job materials</button></div>
             </div>
           </Page>
         );
@@ -575,6 +576,7 @@ export default function App() {
             )}
             {([
               ['Financing', FIN.show ? `${FIN.apr}% · ${FIN.months} months` : 'Hidden from customers', 'financing', Percent],
+              [`Ask ${(st.assistantName || '').trim() || 'Buddy'}`, 'Questions, water tests, installs', 'buddy', Sparkles],
               ['Phone alerts', 'Get a buzz when something needs you', 'phonesetup', Bell],
               ['Signed proposals', signedCount ? `${signedCount} signed this week` : 'Who has signed', 'signedlist', FileCheck],
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
@@ -666,7 +668,7 @@ export default function App() {
           {!Object.values(st.jobs).some((d) => d.ordered) && <div className="muted">No partner orders yet.</div>}
         </Page>
       )}
-      {st.screen === 'help' && <HelpScreen role={st.role} user={st.user || ''} mode={plat.support_mode} from={st.helpFrom || ''} company={coName} back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} onSend={async (t) => {
+      {st.screen === 'help' && <HelpScreen assistant={(st.assistantName || '').trim() || 'Buddy'} onAssistant={() => go('buddy')} role={st.role} user={st.user || ''} mode={plat.support_mode} from={st.helpFrom || ''} company={coName} back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} onSend={async (t) => {
         if (!st.uid || !st.companyId) return 'Please sign in to send a message.';
         const { data, error } = await supabase.from('tickets').insert({ company_id: st.companyId, author_id: st.uid, topic: t.topic, routed_to: t.to, body: t.text, urgent: t.urgent, screenshot: t.screenshot || null }).select('id').single();
         if (error) return /bug_needs_proof/.test(error.message) ? 'A bug report needs a screenshot and a short description of what went wrong.' : 'It did not send. Check your signal and try again.';
@@ -696,6 +698,7 @@ export default function App() {
         <Page title="Setup" sub="First-login checklist" back={() => go('admin')}>
           {SETUP.map((x) => { const d = (st.setup || []).includes(x); return (
             <button key={x} className="row" onClick={() => setSt((s) => ({ ...s, setup: d ? (s.setup || []).filter((q) => q !== x) : [...(s.setup || []), x] }))}><span className="grow"><b>{x}</b></span><span className={'chip ' + (d ? 'ok' : '')}>{d ? 'Done' : 'To do'}</span></button>); })}
+          <div className="field"><label className="lbl">Name of your in-app assistant</label><input className="in" placeholder="Buddy" maxLength={30} value={st.assistantName || ''} onChange={(e) => setSt((x) => ({ ...x, assistantName: e.target.value }))} /><div className="muted">Leave it as Buddy, or give it your own name.</div></div>
           <label className="check"><input type="checkbox" checked={!!st.diy} onChange={(e) => setSt((x) => ({ ...x, diy: e.target.checked }))} />Allow DIY homeowners (off by default)</label>
         </Page>
       )}
@@ -723,6 +726,22 @@ export default function App() {
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
+      {st.screen === 'buddy' && (() => {
+        const name = (st.assistantName || '').trim() || 'Buddy';
+        let context: any = {};
+        if (job && jd) {
+          const r = recommend(jd.values);
+          const tests = [['Hardness', 's5.hard', 'gpg'], ['Iron', 's5.iron', 'ppm'], ['Chlorine', 's5.cl', 'ppm'], ['TDS', 's5.tds', 'ppm'], ['pH', 's5.ph', ''], ['Nitrates', 's5.no3', 'ppm']].filter(([, k]) => String(jd.values[k as string] ?? '').trim()).map(([l, k, u]) => `${l} ${jd.values[k as string]}${u ? ' ' + u : ''}`).join(', ');
+          context = { job: { id: job.id, name: job.name, tests, recommendation: Object.keys(r.out).filter((x) => CAT[x]).map((x) => CAT[x].name).join('; '), flags: r.flags.join('; ') } };
+        }
+        return <BuddyScreen name={name} role={st.role || 'tech'} context={context} back={() => go(job ? 'overview' : st.role === 'admin' ? 'admin' : 'help')} onEscalate={async (transcript) => {
+          if (!st.uid || !st.companyId) return 'Please sign in first.';
+          const { data, error } = await supabase.from('tickets').insert({ company_id: st.companyId, author_id: st.uid, topic: 'Using the app', routed_to: 'From ' + name, body: `Chat with ${name}${job ? ' about ' + job.name + ' (' + job.id + ')' : ''}:\n\n` + transcript, urgent: false }).select('id').single();
+          if (error) return 'It did not send. Check your signal and try again.';
+          if (data?.id) supabase.functions.invoke('support-notify', { body: { ticket_id: data.id } });
+          return '';
+        }} />;
+      })()}
       {st.screen === 'financing' && <FinancingScreen value={st.financing} onChange={(f) => setSt((x) => ({ ...x, financing: f }))} back={() => go('admin')} />}
       {st.screen === 'supportall' && st.dev && <SupportAll back={() => go('admin')} />}
       {st.screen === 'newpass' && <NewPassword onDone={async () => { recovering.current = false; const { data } = await supabase.auth.getSession(); if (data.session) await loadRef.current(data.session, true); else go('login'); }} />}
@@ -768,7 +787,7 @@ const BUG = 'Something went wrong (bug)', IDEA = 'Feature idea';
 const TOPIC_LIST = ['Using the app', 'Install, plumbing or water question', 'Order, billing or account', BUG, IDEA];
 const TOPIC_LABEL: Record<string, string> = { [BUG]: 'Something went wrong', [IDEA]: 'I have an idea' };
 
-function HelpScreen({ role, user, mode, from, company, back, onSend }: { role?: string; user: string; mode?: string; from: string; company: string; back: () => void; onSend: (t: { topic: string; to: string; text: string; urgent: boolean; screenshot?: string }) => Promise<string> }) {
+function HelpScreen({ assistant, onAssistant, role, user, mode, from, company, back, onSend }: { assistant: string; onAssistant: () => void; role?: string; user: string; mode?: string; from: string; company: string; back: () => void; onSend: (t: { topic: string; to: string; text: string; urgent: boolean; screenshot?: string }) => Promise<string> }) {
   const [topic, setTopic] = useState(TOPIC_LIST[0]), [text, setText] = useState(''), [urgent, setUrgent] = useState(false), [shot, setShot] = useState(''), [busy, setBusy] = useState(false), [msg, setMsg] = useState(''), [sent, setSent] = useState(false);
   const bug = topic === BUG;
   const dest = bug || topic === IDEA ? 'Mike, the app\'s developer' : mode === 'company' ? 'your company\'s owner' : MIKE;
@@ -799,6 +818,7 @@ function HelpScreen({ role, user, mode, from, company, back, onSend }: { role?: 
   );
   return (
     <Page root title="Help and support" kicker="Beta version" sub={`${user}${role ? ' · ' + role : ''}`} back={back}>
+      <div className="card"><b>Quick question? Ask {assistant}.</b><div className="muted">Your assistant knows the app and the water rules, and can walk you through an install.</div><button className="btn ghost" onClick={onAssistant}><Sparkles size={16} />Ask {assistant}</button></div>
       <div className="pills">{TOPIC_LIST.map((t) => <button key={t} className={topic === t ? 'on' : ''} onClick={() => { setTopic(t); setMsg(''); }}>{TOPIC_LABEL[t] || t}</button>)}</div>
       <div className="muted">Goes to: {dest}. Replies come to the email you signed up with.</div>
       {bug && <div className="warn">This app is in beta, so thank you for reporting this. We need a screenshot and a note about what went wrong so we can fix it fast.</div>}
@@ -905,6 +925,68 @@ function AlertsCard() {
       {state === 'on' && (<><div className="okmsg">Alerts are on for this phone.</div><button className="btn ghost" disabled={busy} onClick={test}>{busy ? 'Sending…' : 'Send me a test alert'}</button><button className="link left" disabled={busy} onClick={turnOff}>Turn alerts off</button></>)}
       {msg && <div className="muted">{msg}</div>}
     </div>
+  );
+}
+
+const BUDDY_IDEAS: Record<string, string[]> = {
+  tech: ['What does this test result mean?', 'How do I send the proposal?', 'The customer said they found us online. What now?', 'How do I add a part that is not in the catalog?'],
+  plumber: ['Walk me through a softener install', 'Where does the drain line go?', 'What should I order for this job?', 'How do I request an install from the company?'],
+  dealer: ['Walk me through a softener install', 'How do I present the options?'],
+  admin: ['How do I enter my prices?', 'How do I invite a technician?', 'How do I get proposals emailed to customers?'],
+};
+
+function BuddyScreen({ name, role, context, back, onEscalate }: { name: string; role: string; context: any; back: () => void; onEscalate: (transcript: string) => Promise<string> }) {
+  const [msgs, setMsgs] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]), [input, setInput] = useState(''), [busy, setBusy] = useState(false), [note, setNote] = useState(''), [listening, setListening] = useState(false);
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [msgs, busy]);
+  const say = (content: string) => setMsgs((m) => [...m, { role: 'assistant', content }]);
+  const ask = async (text: string) => {
+    const t = text.trim();
+    if (!t || busy) return;
+    const next = [...msgs, { role: 'user' as const, content: t }];
+    setMsgs(next); setInput(''); setBusy(true); setNote('');
+    const { data, error } = await supabase.functions.invoke('buddy', { body: { messages: next, context } });
+    setBusy(false);
+    if (error || !data) { say(`I could not reach the server. Check your signal and ask me again.`); return; }
+    if (data.error === 'not_set_up') say(`I am not switched on yet. Ask the owner to add the AI key under Home, Connected apps, AI assistant.`);
+    else if (data.error === 'key_rejected') say(`The AI key was not accepted. Ask the owner to check it under Connected apps.`);
+    else if (data.error === 'limit') say(`You have used today's questions (${data.limit}). Please try again tomorrow, or tap "Send this chat to a person".`);
+    else if (data.error === 'busy') say(`I am very busy right now. Please ask again in a moment.`);
+    else if (data.error) say(`Something went wrong on my side. Please try again.`);
+    else say(data.reply);
+  };
+  const dictate = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setNote('Voice is not available in this browser. You can type your question.'); return; }
+    const r = new SR(); r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1;
+    r.onresult = (e: any) => setInput((cur) => (cur ? cur + ' ' : '') + e.results[0][0].transcript);
+    r.onend = () => setListening(false); r.onerror = () => setListening(false);
+    setListening(true); r.start();
+  };
+  const escalate = async () => {
+    setBusy(true);
+    const err = await onEscalate(msgs.map((m) => (m.role === 'user' ? 'Me: ' : name + ': ') + m.content).join('\n\n'));
+    setBusy(false);
+    if (err) setNote(err); else say('Done. I sent our chat to a person. They will reply to the email you signed up with.');
+  };
+  const ideas = BUDDY_IDEAS[role] || BUDDY_IDEAS.tech;
+  return (
+    <Page title={name} kicker="Your assistant · Beta" sub={context?.job ? `Looking at ${context.job.name}` : 'Ask about the app, a water test, or an install.'} back={back} backLabel="Back">
+      <div className="chat">
+        <div className="bubble them">Hi, I am {name}. Ask me about the app, a water test, or how to install your system, step by step.</div>
+        {msgs.map((m, i) => <div key={i} className={'bubble ' + (m.role === 'user' ? 'me' : 'them')}>{m.content}</div>)}
+        {busy && <div className="bubble them typing">Typing…</div>}
+        <div ref={end} />
+      </div>
+      {!msgs.length && <div className="pills">{ideas.map((t) => <button key={t} onClick={() => ask(t)}>{t}</button>)}</div>}
+      {note && <div className="err">{note}</div>}
+      {msgs.length >= 2 && !busy && <button className="link left" onClick={escalate}>Send this chat to a person</button>}
+      <div className="actions row2 chatbar">
+        <input className="in" placeholder={`Ask ${name}…`} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ask(input)} />
+        <button className={'btn ghost sq' + (listening ? ' live' : '')} aria-label="Speak your question" onClick={dictate}>🎤</button>
+        <button className="btn sq" aria-label="Send" disabled={!input.trim() || busy} onClick={() => ask(input)}>➤</button>
+      </div>
+    </Page>
   );
 }
 
@@ -1247,6 +1329,7 @@ function LocationsScreen({ back }: { back: () => void }) {
 }
 
 const PROVIDERS: { k: string; name: string; what: string; how: string }[] = [
+  { k: 'anthropic', name: 'AI assistant (Anthropic)', what: 'Powers Buddy, the in-app assistant', how: 'Create an account at console.anthropic.com, open Settings, then API keys, and make a key. Paste it in the second box. Usage is billed to your Anthropic account. The first box can be left blank.' },
   { k: 'resend', name: 'Email sending (Resend)', what: 'Sends proposals and signed copies to customers', how: 'Create a free account at resend.com, add your company web address there, and make an API key. Put the sender in the first box exactly like: Soft Water Specialists <quotes@yourcompany.com>. Put the API key in the second box.' },
   { k: 'housecall_pro', name: 'Housecall Pro', what: 'Jobs and scheduling', how: 'In Housecall Pro, create an API key (it needs a plan that includes API access) and paste it here.' },
   { k: 'angi', name: 'Angi (Angie\'s List)', what: 'Leads and appointments', how: 'Angi shares leads through its partner program. Paste your partner API key if Angi has given you one.' },

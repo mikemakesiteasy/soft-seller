@@ -298,3 +298,12 @@ img{max-width:100%}
 
 .betatag{font-size:10px;font-weight:800;letter-spacing:.14em;border:1px solid rgba(255,255,255,.6);color:#fff;padding:2px 6px;line-height:1.4;align-self:center}
 .loginhero .betatag{position:absolute;top:18px;right:20px}.loginhero{position:relative}
+
+.chat{display:flex;flex-direction:column;gap:10px;padding-bottom:6px}
+.bubble{max-width:86%;padding:10px 12px;font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.bubble.them{align-self:flex-start;background:var(--bg);border:1px solid var(--n300)}
+.bubble.me{align-self:flex-end;background:var(--accent);color:#fff}
+.bubble.typing{color:var(--n600)}
+.chatbar{gap:8px;align-items:center}.chatbar .in{flex:1;min-width:0}.chatbar .btn.sq{width:52px;flex:none}
+.btn.live{background:#fde8e8;border-color:#b42318}
+.btn.sq::after{display:none!important}
