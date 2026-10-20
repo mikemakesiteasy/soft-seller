@@ -1,6 +1,6 @@
 // Offline support. Pages are fetched fresh when there is signal and fall back to the last copy when there is not.
 // Build files have unique names, so they are safe to keep. Data requests (Supabase) are never cached here.
-const CACHE = 'app-shell-v1';
+const CACHE = 'app-shell-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -37,4 +37,23 @@ self.addEventListener('fetch', (event) => {
       }))
     );
   }
+});
+
+// Phone alerts
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { title: 'New alert', body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(d.title || 'New alert', {
+    body: d.body || '', tag: d.tag || undefined, icon: '/icon-192.png', badge: '/favicon-32.png', data: { url: d.url || '/' },
+  }));
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) {
+      if (c.url.startsWith(self.location.origin)) { return c.focus().then(() => ('navigate' in c ? c.navigate(url) : undefined)); }
+    }
+    return self.clients.openWindow(url);
+  }));
 });

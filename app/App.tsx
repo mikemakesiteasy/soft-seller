@@ -566,6 +566,7 @@ export default function App() {
                 <ol>
                   <li><button className="link left" onClick={() => go('catalog')}>Check your prices</button><span className="muted"> and tick the box that says they are correct</span></li>
                   <li><button className="link left" onClick={() => go('integrations')}>Connect your email</button><span className="muted"> so signed proposals can be sent</span></li>
+                  <li><button className="link left" onClick={() => go('phonesetup')}>Turn on phone alerts</button><span className="muted"> so you hear the moment a customer signs</span></li>
                   <li><button className="link left" onClick={() => go('team')}>Invite your team</button><span className="muted"> technicians, dealers, partners</span></li>
                   <li><button className="link left" onClick={() => go('jobs')}>Try a practice job</button><span className="muted"> from the water test to a signed proposal</span></li>
                 </ol>
@@ -574,6 +575,7 @@ export default function App() {
             )}
             {([
               ['Financing', FIN.show ? `${FIN.apr}% · ${FIN.months} months` : 'Hidden from customers', 'financing', Percent],
+              ['Phone alerts', 'Get a buzz when something needs you', 'phonesetup', Bell],
               ['Signed proposals', signedCount ? `${signedCount} signed this week` : 'Who has signed', 'signedlist', FileCheck],
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
               ['Support inbox', `${(st.tickets || []).length} open`, 'inbox', Headphones],
@@ -726,12 +728,13 @@ export default function App() {
       {st.screen === 'newpass' && <NewPassword onDone={async () => { recovering.current = false; const { data } = await supabase.auth.getSession(); if (data.session) await loadRef.current(data.session, true); else go('login'); }} />}
       {st.screen === 'signedlist' && <SignedList notify={st.notifyEmail || ''} onNotify={(v) => setSt((x) => ({ ...x, notifyEmail: v }))} back={() => go('admin')} />}
       {st.screen === 'phonesetup' && (
-        <Page title="Put the app on your phone" kicker="Takes one minute" sub="It then opens like any other app, full screen, with its own icon." back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} backLabel="Back">
+        <Page title="Phone and alerts" kicker="Takes one minute" sub="Put the app on your Home Screen, then turn on alerts." back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} backLabel="Back">
           {canInstall && <button className="btn" onClick={async () => { const e = installEvt.current; if (!e) return; e.prompt(); await e.userChoice; installEvt.current = null; setCanInstall(false); }}>Install the app</button>}
           <div className="card"><h3>iPhone or iPad</h3>
             <ol className="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (the square with an arrow).</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li></ol></div>
           <div className="card"><h3>Android</h3>
             <ol className="steps"><li>Open this page in <b>Chrome</b>.</li><li>Tap <b>Install the app</b> above, or the menu (three dots) then <b>Install app</b>.</li><li>Tap <b>Install</b>.</li></ol></div>
+          <AlertsCard />
           <div className="muted">Once it is on your phone, the app keeps working without signal and syncs when you are back online.</div>
           <div className="actions"><button className="btn ghost" onClick={() => { setBarOpen(false); try { localStorage.setItem('sws-phone-bar', '1'); } catch {} go(st.role === 'admin' ? 'admin' : 'jobs'); }}>Done, hide the reminder</button></div>
         </Page>
@@ -849,6 +852,61 @@ function secDone(v: Vals, id: string) {
 type Prop = { token: string; customer_name: string | null; customer_email: string | null; status: string; created_at: string; signed_at: string | null; signed_name: string | null; snapshot: { option?: string; total?: number } };
 
 type Tk = { has_screenshot?: boolean; id: number; created_at: string; status: string; topic: string; body: string; urgent: boolean; company: string; author_email: string | null; author_name: string | null };
+
+const keyBytes = (b64: string) => { const s2 = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s2), (c) => c.charCodeAt(0)); };
+
+function AlertsCard() {
+  const [state, setState] = useState<'checking' | 'unsupported' | 'blocked' | 'off' | 'on'>('checking'), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installed = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone);
+  const refresh = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { setState('unsupported'); return; }
+    if (Notification.permission === 'denied') { setState('blocked'); return; }
+    try { const reg = await navigator.serviceWorker.getRegistration(); const sub = await reg?.pushManager.getSubscription(); setState(sub && Notification.permission === 'granted' ? 'on' : 'off'); } catch { setState('off'); }
+  };
+  useEffect(() => { refresh(); }, []); // eslint-disable-line
+  const turnOn = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setState(perm === 'denied' ? 'blocked' : 'off'); setBusy(false); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const { data: key, error: ke } = await supabase.rpc('push_public_key');
+      if (ke || !key) throw new Error('Please sign in first.');
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key as string) });
+      const j = sub.toJSON() as any;
+      const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_agent: navigator.userAgent });
+      if (error) throw new Error(error.message);
+      setState('on'); setMsg('Alerts are on for this phone. Tap "Send me a test alert" to check.');
+    } catch (e) { setMsg((e as Error).message || 'Could not turn alerts on.'); }
+    setBusy(false);
+  };
+  const test = async () => {
+    setBusy(true); setMsg('');
+    const { data, error } = await supabase.functions.invoke('push-send', { body: { type: 'test' } });
+    setBusy(false);
+    if (error || data?.error) setMsg('Could not send the test. Try again in a moment.');
+    else if (!data.phones) setMsg('This phone is not registered yet. Turn alerts off and on again.');
+    else if (data.sent) setMsg('Sent. It should buzz in a few seconds.');
+    else setMsg('The alert could not be delivered. Turn alerts off and on again, then try once more.');
+  };
+  const turnOff = async () => {
+    setBusy(true); setMsg('');
+    try { const reg = await navigator.serviceWorker.getRegistration(); const sub = await reg?.pushManager.getSubscription(); if (sub) { await supabase.rpc('remove_push_subscription', { p_endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch {}
+    setBusy(false); setState('off'); setMsg('Alerts are off for this phone.');
+  };
+  return (
+    <div className="card"><h3>Alerts</h3>
+      <div className="muted">A buzz on your phone when a customer signs a proposal or a support request needs you.</div>
+      {state === 'unsupported' && <div className="warn">{ios && !installed ? 'On an iPhone, alerts only work once the app is on your Home Screen. Follow the iPhone steps above, open the app from its new icon, then come back here.' : 'This phone or browser cannot receive alerts. Try Chrome on Android, or the Home Screen app on iPhone.'}</div>}
+      {state === 'blocked' && <div className="warn">Alerts are blocked for this app. Open your phone's Settings, find this app or website, allow Notifications, then come back here.</div>}
+      {state === 'off' && <button className="btn" disabled={busy} onClick={turnOn}>{busy ? 'Turning on…' : 'Turn on alerts'}</button>}
+      {state === 'on' && (<><div className="okmsg">Alerts are on for this phone.</div><button className="btn ghost" disabled={busy} onClick={test}>{busy ? 'Sending…' : 'Send me a test alert'}</button><button className="link left" disabled={busy} onClick={turnOff}>Turn alerts off</button></>)}
+      {msg && <div className="muted">{msg}</div>}
+    </div>
+  );
+}
 
 function FinancingScreen({ value, onChange, back }: { value?: { apr: number; months: number; show: boolean }; onChange: (f: { apr: number; months: number; show: boolean }) => void; back: () => void }) {
   const v = { apr: value?.apr ?? FIN.apr, months: value?.months ?? FIN.months, show: value?.show ?? true };
