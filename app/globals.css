@@ -249,3 +249,41 @@ button,a,label,input,select,textarea{touch-action:manipulation}
 img{max-width:100%}
 .body{min-width:0}.body>*{min-width:0}
 .baempty{aspect-ratio:3/4;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--n600);font-size:13px}
+
+/* ---- proposal as a document ---- */
+.doc{background:#e9edf3;min-height:100vh;padding:0}
+.docpage{max-width:760px;margin:0 auto;background:#fff;color:#0d2550;padding:28px 22px 36px;min-height:100vh}
+.dochead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:18px;border-bottom:3px solid var(--accent)}
+.dochead-brand{min-width:0}
+.doclogo{max-height:56px;max-width:230px;width:auto;display:block;background:var(--navy9);padding:8px 12px}
+.docname{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.dochead-meta{text-align:right;font-size:13px;color:#556070;line-height:1.5;flex:none}
+.docword{font-size:26px;font-weight:800;color:var(--navy9);letter-spacing:-.02em;line-height:1.1}
+.docparties{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px 0;border-bottom:1px solid #d7dde7;font-size:15px;line-height:1.5}
+.docparties>div{min-width:0}
+.cap{font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;color:var(--a700);margin-bottom:4px}
+.docsec{padding:22px 0;border-bottom:1px solid #d7dde7}
+.docsec h2{font-size:20px;margin:0 0 8px;letter-spacing:-.01em;color:var(--navy9)}
+.docp{font-size:15px;line-height:1.55;margin:0 0 12px}
+.docfine{font-size:12.5px;color:#556070;margin:8px 0 0}
+.doctable{width:100%;border-collapse:collapse;font-size:15px}
+.doctable td{padding:10px 0;border-bottom:1px solid #e7ebf1;vertical-align:top}
+.doctable tr:last-child td{border-bottom:0}
+.doctable .r{text-align:right;white-space:nowrap;padding-left:14px}
+.doctable .big td{font-size:22px;font-weight:800;color:var(--navy9);border-bottom:2px solid var(--navy9)}
+.docwhy{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.docwhy li{background:#f3f6fb;border-left:3px solid var(--accent);padding:10px 12px;display:flex;flex-direction:column;gap:2px;font-size:14.5px}
+.docwhy li span{color:#3c4656}
+.docitems{list-style:none;margin:6px 0 0;padding:0}
+.docitems li{padding:8px 0;border-bottom:1px solid #e7ebf1;display:flex;gap:10px;font-size:15px}
+.docitems .tick{color:var(--accent);font-weight:800}
+.docsign{border-bottom:0}
+.docsig{display:block;max-width:320px;width:100%;height:auto;margin:12px 0 4px;border-bottom:1px solid #0d2550}
+.docsigline{display:flex;flex-direction:column;font-size:14px;color:#3c4656;margin-bottom:14px}
+.docsigline b{color:#0d2550;font-size:16px}
+.docfoot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:16px;border-top:3px solid var(--accent);font-size:13px;color:#556070}
+@media (max-width:520px){.docparties{grid-template-columns:1fr}.dochead{flex-direction:column}.dochead-meta{text-align:left}}
+@media (min-width:800px){.doc{padding:28px 0}.docpage{min-height:0;padding:44px 48px 48px;box-shadow:0 2px 24px rgba(13,37,80,.14)}}
+@media print{.doc{background:#fff;padding:0}.docpage{box-shadow:none;padding:0;max-width:none}.noprint,.btn{display:none!important}.docsec{break-inside:avoid}}
+.docpage .docfoot{flex-direction:row;align-items:flex-start;justify-content:space-between;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;text-align:left;padding:16px 0 0;margin:0}
+.docpage .docfoot b{font-weight:800;color:#0d2550;font-size:14px}

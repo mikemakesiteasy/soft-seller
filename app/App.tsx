@@ -1,18 +1,18 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
+import { FileCheck, Link2, Building2, Palette, Users, Repeat, Bell, Box, Check, Headphones, MessageSquare, Package, Settings, ShoppingBag, Wrench, ChevronLeft, ChevronRight, CircleHelp, House, MapPin, Phone, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Sig } from './sig';
 import MeasureTool from './measure';
 import { CATALOG, CAT, JOBS, KITS, MAINS, RULES, RULE_LABELS, LEAD_OPTS, QUICK, REACH_OPTS, SECS, Field, Vals, money, monthly, recommend, suggest, tiers } from '@/lib/data';
 
-type Screen = 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
+type Screen = 'signedlist' | 'phonesetup' | 'locations' | 'integrations' | 'platform' | 'team' | 'brand' | 'companies' | 'newjob' | 'switch' | 'pending' | 'help' | 'inbox' | 'messages' | 'setup' | 'kits' | 'packing' | 'porders' | 'admin' | 'catalog' | 'ordered' | 'login' | 'jobs' | 'overview' | 'section' | 'present' | 'proposal' | 'materials' | 'done';
 type Meta = { id: string; name: string; address: string; city: string; state: string; zip: string; phone: string; reason: string; time: string };
 type Brand = { tagline?: string; phone?: string; web?: string; logo?: string; color?: string; dark?: string };
 type Plat = { app_name?: string; tagline?: string; logo?: string; color?: string; dark?: string };
 type Co = { id: string; name: string; slug: string | null; role: string; brand: Brand; kind?: string; parent_id?: string | null };
 type JobData = { meta?: Meta; values: Vals; flow: 'full' | 'quick'; parts: Record<string, number>; other: { desc: string; qty: number }[]; proposalToken?: string; pendingSign?: { name: string; signature: string; consent: string }; completed?: boolean; choice?: string; fulfil?: 'Pickup' | 'Delivery'; install?: 'Self-install' | 'SWS install'; ordered?: boolean; deposit?: boolean; sent?: boolean };
-type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
+type State = { screen: Screen; jobId?: string; sec: number; jobs: Record<string, JobData>; user?: string; role?: 'tech' | 'plumber' | 'admin'; disc?: number; uid?: string; companyId?: string; dev?: boolean; companies?: Co[]; companyName?: string; companyKind?: string; pendingCode?: string; brand?: Brand; tickets?: { id: number; topic: string; to: string; text: string; urgent: boolean; from: string }[]; prefs?: Record<string, string[]>; setup?: string[]; diy?: boolean; pricesConfirmed?: boolean; notifyEmail?: string; kits?: typeof KITS; rules?: typeof RULES; packed?: Record<string, string[]>; packSent?: Record<string, boolean>; prices?: Record<string, { cost: number; msrp: number; name?: string }>; online: boolean };
 
 const KEY = 'sws-app-v1';
 // Links we create (invites, password resets) use the public address, never the hosting address.
@@ -40,10 +40,19 @@ const applyTheme = (color?: string, dark?: string) => {
   r.setProperty('--navy9', d); r.setProperty('--navy8', shade(d, 1.22));
 };
 const CONSENT = 'I agree to sign this proposal electronically. My typed name and drawn signature are my legal signature.';
-const snapshotOf = (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, co: { name: string; phone?: string; web?: string }) => ({
+// Customer-facing wording: drop internal notes such as "(sizing rule pending ...)" or "(alt: ...)"
+const plain = (w: string) => w.replace(/\s*\((?:[^)]*pending[^)]*|alt:[^)]*)\)/gi, '').trim();
+const extrasOf = (values: Vals, jobId: string, address: string, preparedBy: string) => {
+  const test: [string, string, string][] = [['Hardness', 's5.hard', 'gpg'], ['Iron', 's5.iron', 'ppm'], ['Chlorine', 's5.cl', 'ppm'], ['TDS', 's5.tds', 'ppm'], ['pH', 's5.ph', ''], ['Nitrates', 's5.no3', 'ppm']];
+  const findings = test.filter(([, k]) => String(values[k] ?? '').trim()).map(([label, k, unit]) => ({ label, value: `${values[k]}${unit ? ' ' + unit : ''}` }));
+  const why = Object.entries(recommend(values).out).filter(([sku]) => CAT[sku]).map(([sku, reasons]) => ({ name: CAT[sku].name, because: Array.from(new Set(reasons.map(plain))).join('; ') }));
+  const source = String(values['s2.source'] || '');
+  return { number: jobId, date: new Date().toISOString(), address, preparedBy, source, findings, why };
+};
+const snapshotOf = (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, co: { name: string; phone?: string; web?: string }, extra: Record<string, any> = {}) => ({
   appUrl: appUrl(), option: t.name, sub: t.sub, total: t.total, monthly: monthly(t.total), deposit: dep,
   items: [...t.skus.map((x) => ({ name: CAT[x].name })), { name: 'Installation (materials and labor)' }],
-  tiers: all.map((x) => ({ name: x.name, sub: x.sub, total: x.total, monthly: monthly(x.total) })), company: co,
+  tiers: all.map((x) => ({ name: x.name, sub: x.sub, total: x.total, monthly: monthly(x.total) })), company: co, ...extra,
 });
 const DEFAULT_KITS = JSON.parse(JSON.stringify(KITS)) as typeof KITS;
 const DEFAULT_RULES = RULES.map((r) => ({ ...r }));
@@ -57,6 +66,7 @@ export default function App() {
   const [st, setSt] = useState<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
   const [ready, setReady] = useState(false);
   const stRef = useRef<State>({ screen: 'login', sec: 0, jobs: {}, online: true });
+  const [signedCount, setSignedCount] = useState(0);
   const [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
   stRef.current = st;
   const remoteSettings = useRef<Record<string, any>>({});
@@ -133,7 +143,7 @@ export default function App() {
       const rr = prof?.is_developer ? 'admin' : co.role;
       const role = rr === 'admin' || rr === 'franchisor' ? 'admin' : rr === 'plumber' || rr === 'dealer' ? 'plumber' : 'tech';
       setSt((x) => ({
-        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
+        ...x, kits: cfg.kits, rules: cfg.rules, disc: cfg.disc, prefs: cfg.prefs, setup: cfg.setup, diy: cfg.diy, pricesConfirmed: cfg.pricesConfirmed, notifyEmail: cfg.notifyEmail, brand: effBrand || cfg.brand, companyKind: co.kind, pendingCode: '',
         prices, tickets, companies, companyName: co.name, dev: !!prof?.is_developer, uid, companyId: active, role, user: prof?.display_name || email, inviteErr,
         jobs: x.companyId === active ? { ...x.jobs, ...remote } : remote, jobId: x.companyId === active ? x.jobId : undefined,
         screen: home || x.screen === 'login' || x.screen === 'pending' ? (role === 'admin' ? 'admin' : 'jobs') : x.screen,
@@ -158,7 +168,7 @@ export default function App() {
       const rows = Object.entries(st.prices || {}).map(([sku, pr]) => ({ company_id: st.companyId!, sku, name: CAT[sku]?.name || sku, cost: pr.cost, msrp: pr.msrp }));
       if (rows.length) supabase.from('catalog_items').upsert(rows, { onConflict: 'company_id,sku' }).then(({ error }) => { if (error) console.warn('catalog sync failed', error.message); });
       // save only the settings that really changed, so a stale copy on this phone can never erase anything else
-      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed } as Record<string, any>;
+      const mine = { kits: st.kits, rules: st.rules, disc: st.disc, prefs: st.prefs, setup: st.setup, diy: st.diy, pricesConfirmed: st.pricesConfirmed, notifyEmail: st.notifyEmail } as Record<string, any>;
       const changed = Object.fromEntries(Object.entries(mine).filter(([k, v]) => v !== undefined && JSON.stringify(v) !== JSON.stringify(remoteSettings.current[k])));
       if (Object.keys(changed).length) {
         remoteSettings.current = { ...remoteSettings.current, ...changed };
@@ -166,7 +176,7 @@ export default function App() {
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.uid, st.companyId, st.role]);
+  }, [st.prices, st.kits, st.rules, st.disc, st.prefs, st.setup, st.diy, st.pricesConfirmed, st.notifyEmail, st.uid, st.companyId, st.role]);
   useEffect(() => {
     if (!ready) return;
     const h = hashOf(st.screen, st.jobId, st.sec);
@@ -193,7 +203,7 @@ export default function App() {
         const all = tiers(d.values), t = all.find((x) => x.name === d.choice) || all[1], dep = Math.round(t.total * 0.1);
         let token = d.proposalToken;
         if (!token) {
-          const { data, error } = await supabase.rpc('create_proposal', { p_job_id: id, p_name: String(d.values['s1.name'] || ''), p_email: String(d.values['s1.email'] || ''), p_phone: String(d.values['s1.phone'] || ''), p_snapshot: snapshotOf(t, all, dep, { name: st.companyName || '', phone: st.brand?.phone, web: st.brand?.web }) });
+          const { data, error } = await supabase.rpc('create_proposal', { p_job_id: id, p_name: String(d.values['s1.name'] || ''), p_email: String(d.values['s1.email'] || ''), p_phone: String(d.values['s1.phone'] || ''), p_snapshot: snapshotOf(t, all, dep, { name: st.companyName || '', phone: st.brand?.phone, web: st.brand?.web }, extrasOf(d.values, id, [d.meta?.address, d.meta?.city, d.meta?.state, d.meta?.zip].filter(Boolean).join(', '), st.user || '')) });
           if (error) return; token = data as string;
         }
         const { error } = await supabase.rpc('sign_proposal', { p_token: token, p_name: d.pendingSign.name, p_signature: d.pendingSign.signature, p_consent: d.pendingSign.consent, p_agent: navigator.userAgent });
@@ -204,12 +214,16 @@ export default function App() {
     });
   }, [st.uid, st.online, st.jobs]); // eslint-disable-line
   useEffect(() => {
+    if (st.screen !== 'admin' || !st.uid || st.role !== 'admin') return;
+    supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('status', 'signed').gte('signed_at', new Date(Date.now() - 7 * 864e5).toISOString()).then(({ count }) => setSignedCount(count || 0));
+  }, [st.screen, st.uid, st.role]);
+  useEffect(() => {
     const b = st.uid ? st.brand : loginBrand || plat;
     applyTheme((b as any)?.color || (st.uid ? undefined : plat.color), (b as any)?.dark || (st.uid ? undefined : plat.dark));
   }, [st.uid, st.brand, loginBrand, plat]);
   useEffect(() => { document.title = (st.uid ? st.companyName : loginBrand?.name) || plat.app_name || 'Soft Water Specialists'; }, [st.uid, st.companyName, loginBrand, plat]);
   if (!ready) return null;
-  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, tickets: undefined, jobId: undefined })); };
+  const signOut = async () => { await supabase.auth.signOut(); setSt((x) => ({ ...x, screen: 'login', user: undefined, role: undefined, uid: undefined, companyId: undefined, jobs: {}, dev: false, companies: undefined, companyName: undefined, brand: undefined, prices: undefined, kits: undefined, rules: undefined, disc: undefined, prefs: undefined, setup: undefined, diy: undefined, pricesConfirmed: undefined, notifyEmail: undefined, tickets: undefined, jobId: undefined })); };
   const switchCompany = async (id: string) => { const { error } = await supabase.rpc('set_active_company', { p_company: id }); if (error) { alert(error.message); return; } const { data } = await supabase.auth.getSession(); await loadRef.current(data.session, true); };
   const coName = st.companyName || 'Soft Water Specialists';
   Object.keys(CAT).forEach((k) => { if (!DEFAULT_CAT[k]) delete CAT[k]; else Object.assign(CAT[k], DEFAULT_CAT[k]); });
@@ -236,7 +250,7 @@ export default function App() {
   const ensureProposal = async (t: { name: string; sub: string; skus: string[]; total: number }, all: { name: string; sub: string; total: number }[], dep: number, email: string, phone: string) => {
     if (!job || !jd) throw new Error('No job open');
     if (jd.proposalToken && jd.choice === t.name) return jd.proposalToken;
-    const { data, error } = await supabase.rpc('create_proposal', { p_job_id: job.id, p_name: String(jd.values['s1.name'] || job.name), p_email: email, p_phone: phone, p_snapshot: snapshotOf(t, all, dep, { name: coName, phone: st.brand?.phone, web: st.brand?.web }) });
+    const { data, error } = await supabase.rpc('create_proposal', { p_job_id: job.id, p_name: String(jd.values['s1.name'] || job.name), p_email: email, p_phone: phone, p_snapshot: snapshotOf(t, all, dep, { name: coName, phone: st.brand?.phone, web: st.brand?.web }, extrasOf(jd.values, job.id, [job.address, job.city, job.state, job.zip].filter(Boolean).join(', '), st.user || '')) });
     if (error) throw new Error(error.message);
     patch({ proposalToken: data, choice: t.name });
     return data as string;
@@ -533,6 +547,7 @@ export default function App() {
           </div>
           <div className="body tiles">
             {([
+              ['Signed proposals', signedCount ? `${signedCount} signed this week` : 'Who has signed', 'signedlist', FileCheck],
               ['Partner orders', `${Object.values(st.jobs).filter((j) => j.ordered).length} open`, 'porders', ShoppingBag],
               ['Support inbox', `${(st.tickets || []).length} open`, 'inbox', Headphones],
               ['Packing lists', `${Object.values(st.jobs).filter((j) => jobItems(j).length).length} jobs`, 'packing', Package],
@@ -671,6 +686,7 @@ export default function App() {
       {st.screen === 'platform' && st.dev && (
         <PlatformScreen plat={plat} me={st.uid} back={() => go('admin')} onSave={async (p) => { const { error } = await supabase.from('platform_settings').update({ settings: p }).eq('id', true); if (error) return error.message; setPlat(p); return ''; }} />
       )}
+      {st.screen === 'signedlist' && <SignedList notify={st.notifyEmail || ''} onNotify={(v) => setSt((x) => ({ ...x, notifyEmail: v }))} back={() => go('admin')} />}
       {st.screen === 'phonesetup' && (
         <Page title="Put the app on your phone" kicker="Takes one minute" sub="It then opens like any other app, full screen, with its own icon." back={() => go(st.role === 'admin' ? 'admin' : 'jobs')} backLabel="Back">
           {canInstall && <button className="btn" onClick={async () => { const e = installEvt.current; if (!e) return; e.prompt(); await e.userChoice; installEvt.current = null; setCanInstall(false); }}>Install the app</button>}
@@ -747,6 +763,36 @@ function pct(d: JobData, secs: typeof SECS) {
 }
 function secDone(v: Vals, id: string) {
   return Object.keys(v).some((k) => k.startsWith(id + '.') && v[k] && !(Array.isArray(v[k]) && !v[k].length) && !(id === 's1' && ['s1.name','s1.address','s1.city','s1.state','s1.zip','s1.phone'].includes(k)));
+}
+
+type Prop = { token: string; customer_name: string | null; customer_email: string | null; status: string; created_at: string; signed_at: string | null; signed_name: string | null; snapshot: { option?: string; total?: number } };
+
+function SignedList({ notify, onNotify, back }: { notify: string; onNotify: (v: string) => void; back: () => void }) {
+  const [rows, setRows] = useState<Prop[] | null>(null), [copied, setCopied] = useState('');
+  useEffect(() => { supabase.from('proposals').select('token,customer_name,customer_email,status,created_at,signed_at,signed_name,snapshot').order('created_at', { ascending: false }).limit(60).then(({ data }) => setRows((data as Prop[]) || [])); }, []);
+  const when = (d: string | null) => (d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  const signed = (rows || []).filter((r) => r.status === 'signed'), waiting = (rows || []).filter((r) => r.status !== 'signed');
+  return (
+    <Page title="Signed proposals" kicker="Customer approvals" sub="You get an email with a full copy the moment a customer signs." back={back} backLabel="Home">
+      <div className="card"><b>Also send every signed proposal to</b>
+        <input className="in" type="email" inputMode="email" autoCapitalize="none" placeholder="office@yourcompany.com (optional)" value={notify} onChange={(e) => onNotify(e.target.value.trim())} />
+        <div className="muted">Owners and admins already get it. Add a shared inbox here if the office should get it too.</div></div>
+      {rows === null && <div className="muted">Loading…</div>}
+      {rows && !rows.length && <div className="muted">No proposals yet. They appear here as soon as one is created.</div>}
+      {signed.length > 0 && <h3>Signed</h3>}
+      {signed.map((r) => (
+        <div key={r.token} className="card"><div className="between"><b>{r.signed_name || r.customer_name}</b><span className="chip ok">Signed</span></div>
+          <div>{r.snapshot?.option} option · <b>{money(r.snapshot?.total || 0)}</b></div><div className="muted">Signed {when(r.signed_at)}</div>
+          <a className="btn ghost sm" href={`/p/${r.token}`} target="_blank" rel="noreferrer">Open signed copy</a></div>
+      ))}
+      {waiting.length > 0 && <h3>Waiting for a signature</h3>}
+      {waiting.map((r) => (
+        <div key={r.token} className="card"><div className="between"><b>{r.customer_name || 'Customer'}</b><span className="chip">{r.status === 'sent' ? 'Sent' : 'Draft'}</span></div>
+          <div>{r.snapshot?.option} option · <b>{money(r.snapshot?.total || 0)}</b></div><div className="muted">Created {when(r.created_at)}</div>
+          <button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(`${appUrl()}/p/${r.token}`); setCopied(r.token); }}>{copied === r.token ? 'Link copied ✓' : 'Copy the customer link'}</button></div>
+      ))}
+    </Page>
+  );
 }
 
 function AddProduct({ onAdd }: { onAdd: (sku: string, name: string, cost: number, msrp: number) => void }) {
